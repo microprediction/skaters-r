@@ -120,6 +120,44 @@ repeat_scenarios <- list(
 )
 check_block(repeat_scenarios, repeat_series, v$repeat_scenarios)
 
+# Periodicity detector: ranked (lag, acf) per step on the main series.
+{
+  pd <- period_detector()
+  st <- NULL; row <- 0L
+  for (i in seq_along(series)) {
+    r <- pd(series[i], st); st <- r$state
+    if (i - 1 >= v$burn) {
+      row <- row + 1L
+      expected <- v$periodicity[[row]]
+      checked <- checked + 1L
+      if (length(r$scores) != length(expected)) {
+        fails <- fails + 1L
+        if (fails < 8) cat(sprintf("FAIL periodicity row %d: %d scores, want %d\n",
+                                   row, length(r$scores), length(expected)))
+        next
+      }
+      for (j in seq_along(expected)) {
+        lag_want <- as.integer(expected[[j]][[1]])
+        acf_want <- suppressWarnings(as.numeric(expected[[j]][[2]]))
+        got <- r$scores[[j]]
+        checked <- checked + 2L
+        if (as.integer(got[1]) != lag_want) {
+          fails <- fails + 1L
+          if (fails < 8) cat(sprintf("FAIL periodicity row %d rank %d: lag %d want %d\n",
+                                     row, j, as.integer(got[1]), lag_want))
+        }
+        if (!is.na(acf_want) &&
+            abs(got[2] - acf_want) > ATOL + RTOL * abs(acf_want)) {
+          fails <- fails + 1L
+          if (fails < 8) cat(sprintf("FAIL periodicity row %d rank %d: acf %.9g want %.9g\n",
+                                     row, j, got[2], acf_want))
+        }
+      }
+    }
+  }
+  cat("ok   periodicity\n")
+}
+
 # Covariance estimators on the fixed multivariate series.
 vec_series <- lapply(v$vec_series, unlist)
 cov_fns <- list(running = running_cov, ema = ema_cov, ledoit = ledoit_wolf_cov)

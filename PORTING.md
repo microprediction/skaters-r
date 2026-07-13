@@ -22,7 +22,7 @@ by the Python reference) at 1e-6. `Rscript tests/parity.R` is the gate.
 | laplace (the composition) | api.py | DONE |
 | adaptive search (dantzig) | search.py | open |
 | spec build path | spec.py | open |
-| periodicity detector | periodicity.py | open |
+| periodicity detector | periodicity.py | DONE |
 | covariance estimators (running, ema, ledoit_wolf) | cov/ | DONE |
 
 A porting note for R: factories must `force()` their arguments (and any
