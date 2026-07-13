@@ -10,7 +10,7 @@ by the Python reference) at 1e-6. `Rscript tests/parity.R` is the gate.
 | leaf | src/skaters/leaf.py::leaf | DONE |
 | difference, ema_transform | src/skaters/transform.py | DONE |
 | conjugate | src/skaters/conjugate.py | DONE |
-| remaining transforms (ar, theta, garch, seasonal, yeo-johnson, ...) | transform.py | open |
+| remaining transforms (ar, theta, garch, seasonal, yeo-johnson, ou, frac, ...) | transform.py | DONE |
 | scale_mixture_leaf, crps_leaf, garch_leaf | leaf.py | open |
 | ensembles (precision, bayesian) | ensemble.py, bayesian.py | open (needs prune) |
 | terminal leaf ensemble | terminal.py | open |

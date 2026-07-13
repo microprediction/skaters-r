@@ -7,14 +7,29 @@ ATOL <- 1e-6; RTOL <- 1e-6
 probe <- function(d, p, qlo, qhi) c(dist_mean(d), dist_std(d), dist_logpdf(d, p),
                                     dist_cdf(d, p), dist_quantile(d, qlo),
                                     dist_quantile(d, qhi), dist_crps(d, p))
-scenarios <- list(
-  leaf      = list(k = 1L, sk = leaf(1L)),
-  leaf_k3   = list(k = 3L, sk = leaf(3L)),
-  diff      = list(k = 1L, sk = conjugate(leaf(1L), difference(), 1L)),
-  diff_k3   = list(k = 3L, sk = conjugate(leaf(3L), difference(), 3L)),
-  ema_t     = list(k = 1L, sk = conjugate(leaf(1L), ema_transform(0.1), 1L)),
-  ema_t_k3  = list(k = 3L, sk = conjugate(leaf(3L), ema_transform(0.1), 3L))
-)
+scenarios <- list()
+for (k in c(1L, 3L)) {
+  suf <- if (k == 1L) "" else sprintf("_k%d", k)
+  add <- function(name, sk) scenarios[[paste0(name, suf)]] <<- list(k = k, sk = sk)
+  add("leaf", leaf(k))
+  add("diff", conjugate(leaf(k), difference(), k))
+  add("ema_t", conjugate(leaf(k), ema_transform(0.1), k))
+  add("standardize", conjugate(leaf(k), standardize(), k))
+  add("theta", conjugate(leaf(k), theta(0.1), k))
+  add("drift", conjugate(leaf(k), drift(0.05, 0.01), k))
+  add("holt", conjugate(leaf(k), holt_linear(0.1, 0.05), k))
+  add("garch", conjugate(leaf(k), garch(), k))
+  add("seasonal", conjugate(leaf(k), seasonal_difference(7L), k))
+  add("power", conjugate(leaf(k), power_transform(0.5), k))
+  add("ar1", conjugate(leaf(k), ar(1L), k))
+  add("ar2", conjugate(leaf(k), ar(2L, decay = 1), k))
+  add("frac", conjugate(leaf(k), fractional_difference(0.4, 30L), k))
+  add("grouped_ar", conjugate(leaf(k), grouped_ar(8L), k))
+  add("yeojohnson_log", conjugate(leaf(k), yeo_johnson(0.0), k))
+  add("yeojohnson_half", conjugate(leaf(k), yeo_johnson(0.5), k))
+  add("ou", conjugate(leaf(k), ou_transform(0.1), k))
+  add("ou_sqrt", conjugate(conjugate(leaf(k), ou_transform(0.1), k), yeo_johnson(0.5), k))
+}
 fails <- 0L; checked <- 0L
 for (name in names(scenarios)) {
   sc <- scenarios[[name]]
