@@ -1,10 +1,18 @@
 # Parity against the Python-generated vectors, same 1e-6 discipline as the
 # JS twin. Run: Rscript tests/parity.R
-source("R/dist.R"); source("R/leaf.R"); source("R/transform.R"); source("R/conjugate.R")
+# Runs in two contexts: repo root (Rscript tests/parity.R) sources R/;
+# R CMD check uses the installed package and system.file.
+if (nzchar(system.file("parity", "vectors.json", package = "skaters"))) {
+  library(skaters)
+  .vec_path <- system.file("parity", "vectors.json", package = "skaters")
+} else {
+  for (.f in sort(list.files("R", full.names = TRUE))) source(.f)
+  .vec_path <- "inst/parity/vectors.json"
+}
 source("R/runstats.R"); source("R/ema.R"); source("R/ensemble.R"); source("R/bayesian.R")
 source("R/multiscale.R"); source("R/sticky.R"); source("R/tails.R"); source("R/terminal.R")
 source("R/parade.R"); source("R/api.R")
-v <- jsonlite::fromJSON("inst/parity/vectors.json", simplifyVector = FALSE)
+v <- jsonlite::fromJSON(.vec_path, simplifyVector = FALSE)
 series <- unlist(v$series)
 ATOL <- 1e-6; RTOL <- 1e-6
 probe <- function(d, p, qlo, qhi) c(dist_mean(d), dist_std(d), dist_logpdf(d, p),
