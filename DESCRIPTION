@@ -8,6 +8,8 @@ Description: Port of the Python 'skaters' package: an online, univariate,
     Gaussian-mixture leaf. Every implemented component is verified against
     the reference implementation's parity vectors to 1e-6.
 License: MIT + file LICENSE
+Depends:
+    R (>= 3.6.0)
 Suggests:
     jsonlite
 Encoding: UTF-8
