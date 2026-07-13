@@ -8,11 +8,20 @@ Status: core types and first transforms, parity-verified against the
 Python reference at 1e-6 (11,760 probe values and counting). See
 PORTING.md for the module map and how to help.
 
+## Installation
+
+You can install the development version of skaters from
+[GitHub](https://github.com/microprediction/skaters-r) with:
+
 ```r
-source("R/dist.R")
-source("R/leaf.R")
-source("R/transform.R")
-source("R/conjugate.R")
+# install.packages("pak")
+pak::pak("microprediction/skaters-r")
+```
+
+## Example
+
+```r
+library(skaters)
 
 sk <- conjugate(leaf(1L), ema_transform(0.1), 1L)
 state <- NULL
