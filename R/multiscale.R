@@ -2,11 +2,17 @@
 # Port of skaters/multiscale.py.
 
 multiscale <- function(base, k, scales = NULL, forget = 0.99, max_components = 20L) {
-  force(base); force(forget); force(max_components)
-  if (is.null(scales)) scales <- sort(unique(c(1L, as.integer(ceiling(sqrt(k))), as.integer(k))))
+  force(base)
+  force(forget)
+  force(max_components)
+  if (is.null(scales)) {
+    scales <- sort(unique(c(1L, as.integer(ceiling(sqrt(k))), as.integer(k))))
+  }
   scales <- sort(unique(as.integer(scales[scales >= 1 & scales <= k])))
   stopifnot(length(scales) > 0, scales[1] == 1L)
-  if (length(scales) == 1L) return(base(k))
+  if (length(scales) == 1L) {
+    return(base(k))
+  }
   ns <- length(scales)
   subs <- lapply(scales, function(s) base(max(1L, as.integer(ceiling(k / s)))))
 
@@ -17,7 +23,7 @@ multiscale <- function(base, k, scales = NULL, forget = 0.99, max_components = 2
         phase = lapply(scales, function(s) vector("list", s)),
         pending = lapply(scales, function(s) vector("list", s)),
         latest = vector("list", ns),
-        score = rep(NA_real_, ns)   # NA = no score yet (Python None)
+        score = rep(NA_real_, ns) # NA = no score yet (Python None)
       )
     }
     t <- state$t
@@ -45,16 +51,22 @@ multiscale <- function(base, k, scales = NULL, forget = 0.99, max_components = 2
       wts <- numeric(0)
       for (i in seq_len(ns)) {
         s <- scales[i]
-        if (s > h || is.null(state$latest[[i]])) next
-        j <- max(1L, as.integer(floor(h / s + 0.5)))   # half-up, portable
+        if (s > h || is.null(state$latest[[i]])) {
+          next
+        }
+        j <- max(1L, as.integer(floor(h / s + 0.5))) # half-up, portable
         dists <- state$latest[[i]]
-        if (j > length(dists)) next
+        if (j > length(dists)) {
+          next
+        }
         fcs[[length(fcs) + 1L]] <- dists[[j]]
         m <- scores[i]
         wts <- c(wts, exp((if (is.na(m)) top else m) - top))
       }
       # One eligible scale: pass its Dist through untouched.
-      out[[h]] <- if (length(fcs) == 1L) fcs[[1]] else {
+      out[[h]] <- if (length(fcs) == 1L) {
+        fcs[[1]]
+      } else {
         dist_prune(dist_combine(fcs, wts), max_components)
       }
     }

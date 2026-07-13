@@ -1,14 +1,27 @@
 # Terminal-leaf ensemble: mix for the mean, model the residual once.
 # Port of skaters/terminal.py.
 
-terminal_leaf_ensemble <- function(skaters, leaf_fn = crps_leaf, k = 1L,
-                                   learning_rate = 0.5, complexity_penalty = 0.0,
-                                   depths = NULL, prior_log_weights = NULL,
-                                   max_components = 20L, forget = 1.0) {
-  force(k); force(learning_rate); force(complexity_penalty); force(max_components); force(forget)
+terminal_leaf_ensemble <- function(
+  skaters,
+  leaf_fn = crps_leaf,
+  k = 1L,
+  learning_rate = 0.5,
+  complexity_penalty = 0.0,
+  depths = NULL,
+  prior_log_weights = NULL,
+  max_components = 20L,
+  forget = 1.0
+) {
+  force(k)
+  force(learning_rate)
+  force(complexity_penalty)
+  force(max_components)
+  force(forget)
   n <- length(skaters)
   stopifnot(n > 0)
-  if (is.null(depths)) depths <- rep(0.0, n)
+  if (is.null(depths)) {
+    depths <- rep(0.0, n)
+  }
   prior <- if (is.null(prior_log_weights)) rep(0.0, n) else prior_log_weights
   # One terminal leaf per horizon; closures live here, never in state.
   tleafs <- lapply(seq_len(k), function(h) leaf_fn(k = 1L))
@@ -17,7 +30,7 @@ terminal_leaf_ensemble <- function(skaters, leaf_fn = crps_leaf, k = 1L,
     if (is.null(state)) {
       state <- list(
         sub = vector("list", n),
-        qdist = lapply(seq_len(n), function(i) list()),   # h=1 Dist queue for weighting
+        qdist = lapply(seq_len(n), function(i) list()), # h=1 Dist queue for weighting
         log_w = prior,
         leaf_state = vector("list", k),
         leaf_pred = vector("list", k),
@@ -44,8 +57,7 @@ terminal_leaf_ensemble <- function(skaters, leaf_fn = crps_leaf, k = 1L,
         } else if (!isTRUE(lp >= -20.0)) {
           lp <- -20.0
         }
-        state$log_w[i] <- forget * state$log_w[i] +
-          learning_rate * lp - complexity_penalty * depths[i]
+        state$log_w[i] <- forget * state$log_w[i] + learning_rate * lp - complexity_penalty * depths[i]
       }
       q[[length(q) + 1L]] <- all_dists[[i]][[1]]
       state$qdist[[i]] <- q
@@ -58,8 +70,7 @@ terminal_leaf_ensemble <- function(skaters, leaf_fn = crps_leaf, k = 1L,
 
     combined <- vector("list", k)
     for (h in seq_len(k)) {
-      mu_h <- sum(vapply(seq_len(n),
-                         function(i) w[i] * dist_mean(all_dists[[i]][[h]]), 0.0)) / tot
+      mu_h <- sum(vapply(seq_len(n), function(i) w[i] * dist_mean(all_dists[[i]][[h]]), 0.0)) / tot
 
       # Resolve the h-step-ahead combined-mean prediction made h steps ago
       # into a residual, and update this horizon's terminal leaf.
@@ -77,7 +88,9 @@ terminal_leaf_ensemble <- function(skaters, leaf_fn = crps_leaf, k = 1L,
       } else {
         # Warm-up: fall back to the candidate mixture until the leaf has data.
         p <- dist_combine(lapply(seq_len(n), function(i) all_dists[[i]][[h]]), w)
-        if (length(p$w) > max_components) p <- dist_prune(p, max_components)
+        if (length(p$w) > max_components) {
+          p <- dist_prune(p, max_components)
+        }
         p
       }
       combined[[h]] <- pred

@@ -13,13 +13,19 @@ running_var_update <- function(state, x) {
 }
 
 running_var_get <- function(state) {
-  if (state$n < 2L) return(c(state$mean, Inf))
+  if (state$n < 2L) {
+    return(c(state$mean, Inf))
+  }
   c(state$mean, state$m2 / (state$n - 1))
 }
 
 running_mse_get <- function(state) {
-  if (state$n < 1L) return(Inf)
+  if (state$n < 1L) {
+    return(Inf)
+  }
   mv <- running_var_get(state)
-  if (!is.finite(mv[2])) return(Inf)
+  if (!is.finite(mv[2])) {
+    return(Inf)
+  }
   mv[1] * mv[1] + mv[2]
 }

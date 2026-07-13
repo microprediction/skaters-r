@@ -1,13 +1,26 @@
 # Sticky / lattice projection: mean-preserving near-Dirac atoms at the
 # exact values a series revisits. Port of skaters/sticky.py.
 
-sticky <- function(base, k = 1L, propensity_alpha = 0.05, spike_frac = 0.005,
-                   thresh_mult = 1.8, max_atoms = 6L, prune_eps = 1e-6) {
-  force(base)   # bind now: callers rebind f <- sticky(f, ...)
-  force(k); force(propensity_alpha); force(spike_frac); force(thresh_mult)
-  force(max_atoms); force(prune_eps)
+sticky <- function(
+  base,
+  k = 1L,
+  propensity_alpha = 0.05,
+  spike_frac = 0.005,
+  thresh_mult = 1.8,
+  max_atoms = 6L,
+  prune_eps = 1e-6
+) {
+  force(base) # bind now: callers rebind f <- sticky(f, ...)
+  force(k)
+  force(propensity_alpha)
+  force(spike_frac)
+  force(thresh_mult)
+  force(max_atoms)
+  force(prune_eps)
   function(y, state = NULL) {
-    if (is.null(state)) state <- list(base = NULL, vals = numeric(0), wts = numeric(0))
+    if (is.null(state)) {
+      state <- list(base = NULL, vals = numeric(0), wts = numeric(0))
+    }
 
     r <- base(y, state$base)
     state$base <- r$state
@@ -37,7 +50,8 @@ sticky <- function(base, k = 1L, propensity_alpha = 0.05, spike_frac = 0.005,
     aw <- wts[sel]
     if (length(aw) > 0) {
       o <- order(-aw)
-      av <- av[o]; aw <- aw[o]
+      av <- av[o]
+      aw <- aw[o]
       if (length(aw) > max_atoms) {
         av <- av[seq_len(max_atoms)]
         aw <- aw[seq_len(max_atoms)]
@@ -62,9 +76,7 @@ sticky <- function(base, k = 1L, propensity_alpha = 0.05, spike_frac = 0.005,
       }
       mu <- dist_mean(d)
       delta <- P * (mu - atom_mean) / pc
-      out[[i]] <- dist_new(c(P * (aw / sw), pc * d$w),
-                           c(av, d$m + delta),
-                           c(rep(spike_std, length(aw)), d$s))
+      out[[i]] <- dist_new(c(P * (aw / sw), pc * d$w), c(av, d$m + delta), c(rep(spike_std, length(aw)), d$s))
     }
     list(dists = out, state = state)
   }

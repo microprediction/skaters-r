@@ -6,15 +6,26 @@ if (nzchar(system.file("parity", "vectors.json", package = "skaters"))) {
   library(skaters)
   .vec_path <- system.file("parity", "vectors.json", package = "skaters")
 } else {
-  for (.f in sort(list.files("R", full.names = TRUE))) source(.f)
+  for (.f in sort(list.files("R", full.names = TRUE))) {
+    source(.f)
+  }
   .vec_path <- "inst/parity/vectors.json"
 }
 v <- jsonlite::fromJSON(.vec_path, simplifyVector = FALSE)
 series <- unlist(v$series)
-ATOL <- 1e-6; RTOL <- 1e-6
-probe <- function(d, p, qlo, qhi) c(dist_mean(d), dist_std(d), dist_logpdf(d, p),
-                                    dist_cdf(d, p), dist_quantile(d, qlo),
-                                    dist_quantile(d, qhi), dist_crps(d, p))
+ATOL <- 1e-6
+RTOL <- 1e-6
+probe <- function(d, p, qlo, qhi) {
+  c(
+    dist_mean(d),
+    dist_std(d),
+    dist_logpdf(d, p),
+    dist_cdf(d, p),
+    dist_quantile(d, qlo),
+    dist_quantile(d, qhi),
+    dist_crps(d, p)
+  )
+}
 scenarios <- list()
 for (k in c(1L, 3L)) {
   suf <- if (k == 1L) "" else sprintf("_k%d", k)
@@ -40,29 +51,42 @@ for (k in c(1L, 3L)) {
   add("ema_skater", ema(0.05, k))
   add("pw_ensemble", precision_weighted_ensemble(list(ema(0.05, k), ema(0.2, k)), k))
   add("multiscale", multiscale(function(kk) conjugate(leaf(kk), ema_transform(0.1), kk), k))
-  add("bayes_ensemble", bayesian_ensemble(
-    list(ema(0.05, k), conjugate(leaf(k), difference(), k)),
-    k = k, learning_rate = 0.5, complexity_penalty = 0.02, depths = c(1, 1)))
+  add(
+    "bayes_ensemble",
+    bayesian_ensemble(
+      list(ema(0.05, k), conjugate(leaf(k), difference(), k)),
+      k = k,
+      learning_rate = 0.5,
+      complexity_penalty = 0.02,
+      depths = c(1, 1)
+    )
+  )
 }
 scenarios[["scale_mixture_leaf"]] <- list(k = 1L, sk = scale_mixture_leaf(1L))
 scenarios[["crps_leaf"]] <- list(k = 1L, sk = crps_leaf(1L))
 scenarios[["garch_leaf"]] <- list(k = 1L, sk = garch_leaf(1L))
 scenarios[["scalemix_ema"]] <- list(
-  k = 1L, sk = conjugate(scale_mixture_leaf(1L), ema_transform(0.1), 1L))
+  k = 1L,
+  sk = conjugate(scale_mixture_leaf(1L), ema_transform(0.1), 1L)
+)
 scenarios[["gpd_tails"]] <- list(
-  k = 1L, sk = gpdtails(conjugate(leaf(1L), ema_transform(0.1), 1L),
-                        k = 1L, level = 0.9, nexc = 50L, warmup = 100L))
+  k = 1L,
+  sk = gpdtails(conjugate(leaf(1L), ema_transform(0.1), 1L), k = 1L, level = 0.9, nexc = 50L, warmup = 100L)
+)
 scenarios[["pol_laplace"]] <- list(k = 1L, sk = laplace(k = 1L))
 scenarios[["pol_laplace_k3"]] <- list(k = 3L, sk = laplace(k = 3L))
 
-fails <- 0L; checked <- 0L
+fails <- 0L
+checked <- 0L
 check_block <- function(scenarios, series, expected_block) {
   for (name in names(scenarios)) {
     sc <- scenarios[[name]]
     expected <- expected_block[[name]]$out
-    st <- NULL; row <- 0L
+    st <- NULL
+    row <- 0L
     for (i in seq_along(series)) {
-      r <- sc$sk(series[i], st); st <- r$state
+      r <- sc$sk(series[i], st)
+      st <- r$state
       if (i - 1 >= v$burn) {
         row <- row + 1L
         for (h in seq_len(sc$k)) {
@@ -71,11 +95,14 @@ check_block <- function(scenarios, series, expected_block) {
           exp_ <- suppressWarnings(as.numeric(exp_))
           for (j in seq_along(got)) {
             checked <<- checked + 1L
-            if (is.na(exp_[j])) next
+            if (is.na(exp_[j])) {
+              next
+            }
             if (abs(got[j] - exp_[j]) > ATOL + RTOL * abs(exp_[j])) {
               fails <<- fails + 1L
-              if (fails < 8) cat(sprintf("FAIL %s row %d h %d probe %d: got %.9g want %.9g\n",
-                                          name, row, h, j, got[j], exp_[j]))
+              if (fails < 8) {
+                cat(sprintf("FAIL %s row %d h %d probe %d: got %.9g want %.9g\n", name, row, h, j, got[j], exp_[j]))
+              }
             }
           }
         }
@@ -94,5 +121,8 @@ repeat_scenarios <- list(
 check_block(repeat_scenarios, repeat_series, v$repeat_scenarios)
 
 cat(sprintf("%d values checked\n", checked))
-if (fails > 0) { cat(sprintf("PARITY FAILED: %d\n", fails)); quit(status = 1) }
+if (fails > 0) {
+  cat(sprintf("PARITY FAILED: %d\n", fails))
+  quit(status = 1)
+}
 cat("PARITY OK\n")

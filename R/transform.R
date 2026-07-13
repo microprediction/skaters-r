@@ -3,13 +3,16 @@
 
 difference <- function() {
   forward <- function(y, tstate = NULL) {
-    if (is.null(tstate)) return(list(y = 0.0, state = list(last = y)))
+    if (is.null(tstate)) {
+      return(list(y = 0.0, state = list(last = y)))
+    }
     list(y = y - tstate$last, state = list(last = y))
   }
   inverse_k <- function(dists, tstate) {
     anchor <- tstate$last
     out <- vector("list", length(dists))
-    cm <- 0.0; cv <- 0.0
+    cm <- 0.0
+    cv <- 0.0
     for (i in seq_along(dists)) {
       d <- dists[[i]]
       cm <- cm + dist_mean(d)
@@ -25,7 +28,9 @@ difference <- function() {
 ema_transform <- function(alpha = 0.05) {
   stopifnot(alpha > 0, alpha < 1)
   forward <- function(y, tstate = NULL) {
-    if (is.null(tstate)) return(list(y = 0.0, state = list(level = y)))
+    if (is.null(tstate)) {
+      return(list(y = 0.0, state = list(level = y)))
+    }
     residual <- y - tstate$level
     list(y = residual, state = list(level = tstate$level + alpha * residual))
   }
@@ -36,10 +41,14 @@ ema_transform <- function(alpha = 0.05) {
 }
 
 standardize <- function(alpha = 0.05, eps = 1e-8) {
-  force(alpha); force(eps)
+  force(alpha)
+  force(eps)
   forward <- function(y, tstate = NULL) {
-    if (is.null(tstate)) return(list(y = 0.0, state = list(mu = y, var = 0.0)))
-    mu <- tstate$mu; v <- tstate$var
+    if (is.null(tstate)) {
+      return(list(y = 0.0, state = list(mu = y, var = 0.0)))
+    }
+    mu <- tstate$mu
+    v <- tstate$var
     diff <- y - mu
     mu_new <- mu + alpha * diff
     v <- (1 - alpha) * v + alpha * diff * diff
@@ -62,13 +71,16 @@ ou_transform <- function(kappa = 0.1, alpha = 0.02) {
       return(list(y = 0.0, state = list(m = y0, fc = y0, y = y0)))
     }
     resid <- y - tstate$fc
-    if (!is.finite(resid)) resid <- 0.0
+    if (!is.finite(resid)) {
+      resid <- 0.0
+    }
     m <- tstate$m + alpha * (y - tstate$m)
     fc <- m + phi * (y - m)
     list(y = resid, state = list(m = m, fc = fc, y = y))
   }
   inverse_k <- function(dists, tstate) {
-    m <- tstate$m; ylast <- tstate$y
+    m <- tstate$m
+    ylast <- tstate$y
     out <- vector("list", length(dists))
     for (h in seq_along(dists)) {
       center <- m + (phi^h) * (ylast - m)
@@ -84,8 +96,7 @@ theta <- function(alpha = 0.1) {
   stopifnot(alpha > 0, alpha < 1)
   forward <- function(y, tstate = NULL) {
     if (is.null(tstate)) {
-      return(list(y = 0.0, state = list(ses = y, t = 1, sum_t = 1.0, sum_t2 = 1.0,
-                                        sum_y = y, sum_ty = y)))
+      return(list(y = 0.0, state = list(ses = y, t = 1, sum_t = 1.0, sum_t2 = 1.0, sum_y = y, sum_ty = y)))
     }
     s <- tstate
     s$t <- s$t + 1
@@ -124,16 +135,20 @@ drift <- function(alpha = 0.002, shrinkage = 0.001) {
   stopifnot(alpha > 0, alpha < 1, shrinkage >= 0, shrinkage < 1)
   decay <- 1 - alpha - shrinkage
   forward <- function(y, tstate = NULL) {
-    if (is.null(tstate)) return(list(y = 0.0, state = list(last = y, mu = 0.0)))
+    if (is.null(tstate)) {
+      return(list(y = 0.0, state = list(last = y, mu = 0.0)))
+    }
     dy <- y - tstate$last
     residual <- dy - tstate$mu
     mu <- decay * tstate$mu + alpha * dy
     list(y = residual, state = list(last = y, mu = mu))
   }
   inverse_k <- function(dists, tstate) {
-    anchor <- tstate$last; mu <- tstate$mu
+    anchor <- tstate$last
+    mu <- tstate$mu
     out <- vector("list", length(dists))
-    cm <- 0.0; cv <- 0.0
+    cm <- 0.0
+    cv <- 0.0
     for (h in seq_along(dists)) {
       d <- dists[[h]]
       cm <- cm + dist_mean(d)
@@ -150,15 +165,19 @@ drift <- function(alpha = 0.002, shrinkage = 0.001) {
 holt_linear <- function(alpha = 0.1, beta = 0.05) {
   stopifnot(alpha > 0, alpha < 1, beta > 0, beta < 1)
   forward <- function(y, tstate = NULL) {
-    if (is.null(tstate)) return(list(y = 0.0, state = list(level = y, trend = 0.0)))
-    l_prev <- tstate$level; b_prev <- tstate$trend
+    if (is.null(tstate)) {
+      return(list(y = 0.0, state = list(level = y, trend = 0.0)))
+    }
+    l_prev <- tstate$level
+    b_prev <- tstate$trend
     l_new <- alpha * y + (1 - alpha) * (l_prev + b_prev)
     b_new <- beta * (l_new - l_prev) + (1 - beta) * b_prev
     residual <- y - (l_prev + b_prev)
     list(y = residual, state = list(level = l_new, trend = b_new))
   }
   inverse_k <- function(dists, tstate) {
-    level <- tstate$level; trend <- tstate$trend
+    level <- tstate$level
+    trend <- tstate$trend
     out <- vector("list", length(dists))
     cv <- 0.0
     for (h in seq_along(dists)) {
@@ -196,22 +215,27 @@ garch <- function(omega = 0.01, alpha = 0.1, beta = 0.85, eps = 1e-8) {
 seasonal_difference <- function(period = 12L) {
   stopifnot(period >= 1)
   forward <- function(y, tstate = NULL) {
-    if (is.null(tstate)) return(list(y = 0.0, state = list(buffer = y)))
+    if (is.null(tstate)) {
+      return(list(y = 0.0, state = list(buffer = y)))
+    }
     buf <- tstate$buffer
     y_prime <- if (length(buf) >= period) y - buf[length(buf) - period + 1] else 0.0
     buf <- c(buf, y)
-    if (length(buf) > 2 * period) buf <- buf[-1]
+    if (length(buf) > 2 * period) {
+      buf <- buf[-1]
+    }
     list(y = y_prime, state = list(buffer = buf))
   }
   inverse_k <- function(dists, tstate) {
     buf <- tstate$buffer
     k <- length(dists)
-    recovered_means <- numeric(k); recovered_vars <- numeric(k)
+    recovered_means <- numeric(k)
+    recovered_vars <- numeric(k)
     out <- vector("list", k)
     for (h in seq_len(k)) {
       lag_idx <- (h - 1) - period
       if (lag_idx < 0) {
-        buf_idx <- length(buf) - period + h    # 1-based
+        buf_idx <- length(buf) - period + h # 1-based
         anchor_mean <- if (buf_idx >= 1 && buf_idx <= length(buf)) buf[buf_idx] else 0.0
         anchor_var <- 0.0
       } else {
@@ -244,9 +268,11 @@ power_transform <- function(p = 0.5) {
     for (i in seq_along(dists)) {
       d <- dists[[i]]
       n <- length(d$w)
-      m_out <- numeric(n); s_out <- numeric(n)
+      m_out <- numeric(n)
+      s_out <- numeric(n)
       for (j in seq_len(n)) {
-        mu <- d$m[j]; sigma <- d$s[j]
+        mu <- d$m[j]
+        sigma <- d$s[j]
         orig_mean <- if (mu < 0) -abs(mu)^inv_p else abs(mu)^inv_p
         abs_mu <- abs(mu)
         deriv <- if (abs_mu > 1e-12) inv_p * abs_mu^(inv_p - 1) else inv_p
@@ -264,29 +290,41 @@ yeo_johnson <- function(lmbda = 0.0) {
   L <- as.numeric(lmbda)
   yj_fwd <- function(y) {
     if (y >= 0.0) {
-      if (L == 0.0) return(log1p(y))
+      if (L == 0.0) {
+        return(log1p(y))
+      }
       return(((y + 1.0)^L - 1.0) / L)
     }
-    if (L == 2.0) return(-log1p(-y))
+    if (L == 2.0) {
+      return(-log1p(-y))
+    }
     -(((-y + 1.0)^(2.0 - L) - 1.0) / (2.0 - L))
   }
   yj_inv <- function(yp) {
     if (yp >= 0.0) {
-      if (L == 0.0) return(expm1(min(yp, 350.0)))
+      if (L == 0.0) {
+        return(expm1(min(yp, 350.0)))
+      }
       base <- max(L * yp + 1.0, 1e-12)
       return(base^(1.0 / L) - 1.0)
     }
-    if (L == 2.0) return(1.0 - exp(min(-yp, 350.0)))
+    if (L == 2.0) {
+      return(1.0 - exp(min(-yp, 350.0)))
+    }
     base <- max(-(2.0 - L) * yp + 1.0, 1e-12)
     1.0 - base^(1.0 / (2.0 - L))
   }
   yj_dinv <- function(yp) {
     if (yp >= 0.0) {
-      if (L == 0.0) return(exp(min(yp, 350.0)))
+      if (L == 0.0) {
+        return(exp(min(yp, 350.0)))
+      }
       base <- max(L * yp + 1.0, 1e-12)
       return(base^(1.0 / L - 1.0))
     }
-    if (L == 2.0) return(exp(min(-yp, 350.0)))
+    if (L == 2.0) {
+      return(exp(min(-yp, 350.0)))
+    }
     base <- max(-(2.0 - L) * yp + 1.0, 1e-12)
     base^(1.0 / (2.0 - L) - 1.0)
   }
@@ -311,16 +349,24 @@ yeo_johnson <- function(lmbda = 0.0) {
 .frac_diff_weights <- function(d, window) {
   w <- numeric(window)
   w[1] <- 1.0
-  if (window > 1) for (i in seq_len(window - 1)) w[i + 1] <- -w[i] * (d - i + 1) / i
+  if (window > 1) {
+    for (i in seq_len(window - 1)) {
+      w[i + 1] <- -w[i] * (d - i + 1) / i
+    }
+  }
   w
 }
 
 fractional_difference <- function(d = 0.4, window = 50L) {
   w_fwd <- .frac_diff_weights(d, window)
   forward <- function(y, tstate = NULL) {
-    if (is.null(tstate)) tstate <- list(buffer = numeric(0))
+    if (is.null(tstate)) {
+      tstate <- list(buffer = numeric(0))
+    }
     buf <- c(tstate$buffer, y)
-    if (length(buf) > window) buf <- buf[-1]
+    if (length(buf) > window) {
+      buf <- buf[-1]
+    }
     n <- length(buf)
     y_prime <- sum(w_fwd[seq_len(n)] * buf[n:1])
     list(y = y_prime, state = list(buffer = buf))
@@ -334,7 +380,11 @@ fractional_difference <- function(d = 0.4, window = 50L) {
       n <- length(buf)
       shift <- 0.0
       jmax <- min(n, window) - 1
-      if (jmax >= 1) for (j in seq_len(jmax)) shift <- shift - w_fwd[j + 1] * buf[n - j]
+      if (jmax >= 1) {
+        for (j in seq_len(jmax)) {
+          shift <- shift - w_fwd[j + 1] * buf[n - j]
+        }
+      }
       recovered <- dist_mean(d_in) + shift
       buf[n] <- recovered
       out[[i]] <- dist_gaussian(recovered, dist_std(d_in))
@@ -349,7 +399,9 @@ fractional_difference <- function(d = 0.4, window = 50L) {
 
 .rls_mat_vec <- function(M, v, n) {
   out <- numeric(n)
-  for (i in seq_len(n)) out[i] <- sum(M[i, ] * v)
+  for (i in seq_len(n)) {
+    out[i] <- sum(M[i, ] * v)
+  }
   out
 }
 
@@ -359,7 +411,9 @@ ar <- function(order = 2L, lam = 0.99, ridge = 1.0, decay = 0.0) {
   p <- order
   init_P <- function() {
     P <- matrix(0.0, p, p)
-    for (j in seq_len(p)) P[j, j] <- if (decay > 0) ridge / (j^decay) else ridge
+    for (j in seq_len(p)) {
+      P[j, j] <- if (decay > 0) ridge / (j^decay) else ridge
+    }
     P
   }
   forward <- function(y, tstate = NULL) {
@@ -380,14 +434,18 @@ ar <- function(order = 2L, lam = 0.99, ridge = 1.0, decay = 0.0) {
         K <- Px / denom
         st$phi <- st$phi + K * residual
         P <- (P - K %o% Px) / lam
-        if (!all(is.finite(P)) || max(abs(P)) > 1e10) P <- init_P()
+        if (!all(is.finite(P)) || max(abs(P)) > 1e10) {
+          P <- init_P()
+        }
         st$P <- P
       }
     } else {
       residual <- y
     }
     buf <- c(buf, y)
-    if (length(buf) > 2 * p + 10) buf <- buf[-1]
+    if (length(buf) > 2 * p + 10) {
+      buf <- buf[-1]
+    }
     st$buffer <- buf
     list(y = residual, state = st)
   }
@@ -395,12 +453,14 @@ ar <- function(order = 2L, lam = 0.99, ridge = 1.0, decay = 0.0) {
     buf <- tstate$buffer
     phi <- tstate$phi
     k <- length(dists)
-    recovered_means <- numeric(k); recovered_vars <- numeric(k)
+    recovered_means <- numeric(k)
+    recovered_vars <- numeric(k)
     out <- vector("list", k)
     for (h in seq_len(k)) {
-      ar_mean <- 0.0; ar_var <- 0.0
+      ar_mean <- 0.0
+      ar_var <- 0.0
       for (j in seq_len(p)) {
-        lag_h <- (h - 1) - j          # 0-based previous horizon index
+        lag_h <- (h - 1) - j # 0-based previous horizon index
         if (lag_h < 0) {
           buf_idx <- length(buf) + lag_h + 1
           if (buf_idx >= 1 && buf_idx <= length(buf)) {
@@ -426,10 +486,14 @@ ar <- function(order = 2L, lam = 0.99, ridge = 1.0, decay = 0.0) {
 
 .build_groups <- function(max_lag) {
   groups <- integer(0)
-  g <- 1L; size <- 1L; assigned <- 0L
+  g <- 1L
+  size <- 1L
+  assigned <- 0L
   while (assigned < max_lag) {
     for (i in seq_len(size)) {
-      if (assigned >= max_lag) break
+      if (assigned >= max_lag) {
+        break
+      }
       groups <- c(groups, g)
       assigned <- assigned + 1L
     }
@@ -441,7 +505,7 @@ ar <- function(order = 2L, lam = 0.99, ridge = 1.0, decay = 0.0) {
 
 grouped_ar <- function(max_lag = 16L, lam = 0.99, ridge = 1.0) {
   stopifnot(max_lag >= 1, lam > 0, lam <= 1, ridge > 0)
-  groups <- .build_groups(max_lag)   # 1-based group id per lag j = 1..max_lag
+  groups <- .build_groups(max_lag) # 1-based group id per lag j = 1..max_lag
   n_groups <- max(groups)
   init_P <- function() diag(ridge, n_groups, n_groups)
   group_regressor <- function(buf) {
@@ -470,14 +534,18 @@ grouped_ar <- function(max_lag = 16L, lam = 0.99, ridge = 1.0) {
         K <- Px / denom
         st$theta <- st$theta + K * residual
         P <- (P - K %o% Px) / lam
-        if (!all(is.finite(P)) || max(abs(P)) > 1e10) P <- init_P()
+        if (!all(is.finite(P)) || max(abs(P)) > 1e10) {
+          P <- init_P()
+        }
         st$P <- P
       }
     } else {
       residual <- y
     }
     buf <- c(buf, y)
-    if (length(buf) > max_lag + 10) buf <- buf[-1]
+    if (length(buf) > max_lag + 10) {
+      buf <- buf[-1]
+    }
     st$buffer <- buf
     list(y = residual, state = st)
   }
@@ -485,10 +553,12 @@ grouped_ar <- function(max_lag = 16L, lam = 0.99, ridge = 1.0) {
     buf <- tstate$buffer
     phi <- tstate$theta[groups]
     k <- length(dists)
-    recovered_means <- numeric(k); recovered_vars <- numeric(k)
+    recovered_means <- numeric(k)
+    recovered_vars <- numeric(k)
     out <- vector("list", k)
     for (h in seq_len(k)) {
-      ar_mean <- 0.0; ar_var <- 0.0
+      ar_mean <- 0.0
+      ar_var <- 0.0
       for (j in seq_len(max_lag)) {
         lag_h <- (h - 1) - j
         if (lag_h < 0) {

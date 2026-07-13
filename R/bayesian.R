@@ -1,14 +1,25 @@
 # Bayesian model averaging ensemble with shrinkage and complexity penalty.
 # Port of skaters/bayesian.py.
 
-bayesian_ensemble <- function(skaters, k = 1L, learning_rate = 0.5,
-                              complexity_penalty = 0.0, depths = NULL,
-                              prior_log_weights = NULL, max_components = 20L) {
-  force(k); force(max_components)
+bayesian_ensemble <- function(
+  skaters,
+  k = 1L,
+  learning_rate = 0.5,
+  complexity_penalty = 0.0,
+  depths = NULL,
+  prior_log_weights = NULL,
+  max_components = 20L
+) {
+  force(k)
+  force(max_components)
   n <- length(skaters)
   stopifnot(n > 0, learning_rate > 0, learning_rate <= 1, complexity_penalty >= 0)
-  if (is.null(depths)) depths <- rep(0.0, n)
-  if (is.null(prior_log_weights)) prior_log_weights <- rep(0.0, n)
+  if (is.null(depths)) {
+    depths <- rep(0.0, n)
+  }
+  if (is.null(prior_log_weights)) {
+    prior_log_weights <- rep(0.0, n)
+  }
   function(y, state = NULL) {
     if (is.null(state)) {
       state <- list(
@@ -41,7 +52,8 @@ bayesian_ensemble <- function(skaters, k = 1L, learning_rate = 0.5,
             lp <- -20.0
           }
           state$log_w[[i]][h] <- state$log_w[[i]][h] +
-            learning_rate * lp - complexity_penalty * depths[i]
+            learning_rate * lp -
+            complexity_penalty * depths[i]
         }
         state$queues[[i]][[h]] <- q
       }
@@ -53,7 +65,9 @@ bayesian_ensemble <- function(skaters, k = 1L, learning_rate = 0.5,
       weights <- if (is.finite(max_lw)) exp(log_ws - max_lw) else rep(1.0, n)
       horizon_dists <- lapply(seq_len(n), function(i) all_dists[[i]][[h]])
       d <- dist_combine(horizon_dists, weights)
-      if (length(d$w) > max_components) d <- dist_prune(d, max_components)
+      if (length(d$w) > max_components) {
+        d <- dist_prune(d, max_components)
+      }
       combined[[h]] <- d
     }
     list(dists = combined, state = state)
