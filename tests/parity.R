@@ -73,6 +73,10 @@ scenarios[["gpd_tails"]] <- list(
   k = 1L,
   sk = gpdtails(conjugate(leaf(1L), ema_transform(0.1), 1L), k = 1L, level = 0.9, nexc = 50L, warmup = 100L)
 )
+scenarios[["spec_diff_ensemble"]] <- list(k = 1L, sk = spec_build(
+  conjugate_spec(ensemble_spec(ema_spec(0.01, 1L), ema_spec(0.1, 1L), k = 1L),
+                 diff_spec())))
+scenarios[["spec_ema"]] <- list(k = 1L, sk = spec_build(ema_spec(0.05, 1L)))
 scenarios[["pol_laplace"]] <- list(k = 1L, sk = laplace(k = 1L))
 scenarios[["pol_laplace_k3"]] <- list(k = 3L, sk = laplace(k = 3L))
 
