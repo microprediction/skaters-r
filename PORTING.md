@@ -3,6 +3,12 @@
 The discipline, inherited from the JavaScript twin: no module ships
 without passing the parity vectors (`inst/parity/vectors.json`, generated
 by the Python reference) at 1e-6. `Rscript tests/parity.R` is the gate.
+Two further gates run alongside it (standalone and under R CMD check):
+`tests/robustness.R`, the adversarial streams from the reference repo's
+release gate, and `tests/contract.R`, determinism plus exact
+checkpoint-resume through saveRDS/readRDS.
+
+Every row below is ported. The table stays as the map of what lives where.
 
 | module | Python source | status |
 |---|---|---|

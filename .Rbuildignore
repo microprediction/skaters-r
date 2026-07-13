@@ -6,7 +6,6 @@
 ^CRAN-RELEASE$
 ^CRAN-SUBMISSION$
 ^Dockerfile$
-^LICENSE$
 ^LICENSE\.md$
 ^Meta$
 ^PORTING\.md$
@@ -44,3 +43,5 @@
 ^paper$
 ^pkgdown$
 ^revdep$
+^skaters\.Rcheck$
+^skaters_.*\.tar\.gz$

@@ -19,6 +19,14 @@ Rscript tests/parity.R      # must print PARITY OK
 Never commit red. The script runs from the repo root, and also inside
 `R CMD check` against the installed package; both must pass.
 
+Two further gates live beside it and run the same way:
+`tests/robustness.R` (the adversarial streams from the reference repo's
+release gate: constant, lattice, monster spike, extreme tick, scale
+collapse, vol whiplash, and a long soak that activates the GPD splice)
+and `tests/contract.R` (bit-exact determinism across instances, and
+checkpoint-resume through saveRDS/readRDS compared with `identical`,
+which is why state must stay plain data).
+
 ## What "up to date" means here
 
 This port is faithful to skaters *as of the pinned commit*. When the
