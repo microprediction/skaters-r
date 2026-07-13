@@ -13,4 +13,5 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: r-lib/actions/setup-r@v2
+      - run: Rscript -e 'install.packages("jsonlite", repos = "https://cloud.r-project.org")'
       - run: R CMD build . && R CMD check --no-manual skaters_*.tar.gz

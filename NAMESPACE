@@ -1,3 +1,1 @@
-export(dist_new, dist_gaussian, dist_combine, dist_mean, dist_var, dist_std,
-       dist_logpdf, dist_cdf, dist_crps, dist_quantile, dist_shift,
-       leaf, difference, ema_transform, conjugate)
+exportPattern("^[^.]")
