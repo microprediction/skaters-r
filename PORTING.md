@@ -25,6 +25,11 @@ well; ensembles need `prune` (port its ulp-tolerant pair merge exactly,
 it exists to keep platforms in agreement); the composition comes last and
 is then covered by the `pol_laplace` scenarios in the same vectors file.
 
+Parity vectors provenance: inst/parity/vectors.json is copied from
+microprediction/skaters at commit 9cb5d1c (parity/vectors.json there);
+refresh by rerunning parity/gen_vectors.py in that repository and
+copying the output here.
+
 Release channels: R-universe from day one (automatic builds per push once
 the repo is registered), CRAN manually when the surface stabilizes. CRAN
 has no automated submission path and expects at most a release every month or
