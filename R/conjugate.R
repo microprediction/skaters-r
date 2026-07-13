@@ -2,6 +2,7 @@
 # Port of skaters/conjugate.py.
 
 conjugate <- function(skater, transform, k = 1L) {
+  force(skater); force(transform); force(k)   # bind eagerly: callers construct in loops
   function(y, state = NULL) {
     if (is.null(state)) state <- list(t_state = NULL, s_state = NULL)
     f <- transform$forward(y, state$t_state)

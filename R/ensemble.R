@@ -2,6 +2,7 @@
 # Port of skaters/ensemble.py.
 
 precision_weighted_ensemble <- function(skaters, k = 1L, floor = 1e-6) {
+  force(k); force(floor)
   n <- length(skaters)
   stopifnot(n > 0)
   function(y, state = NULL) {

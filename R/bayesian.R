@@ -4,6 +4,7 @@
 bayesian_ensemble <- function(skaters, k = 1L, learning_rate = 0.5,
                               complexity_penalty = 0.0, depths = NULL,
                               prior_log_weights = NULL, max_components = 20L) {
+  force(k); force(max_components)
   n <- length(skaters)
   stopifnot(n > 0, learning_rate > 0, learning_rate <= 1, complexity_penalty >= 0)
   if (is.null(depths)) depths <- rep(0.0, n)

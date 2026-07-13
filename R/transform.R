@@ -36,6 +36,7 @@ ema_transform <- function(alpha = 0.05) {
 }
 
 standardize <- function(alpha = 0.05, eps = 1e-8) {
+  force(alpha); force(eps)
   forward <- function(y, tstate = NULL) {
     if (is.null(tstate)) return(list(y = 0.0, state = list(mu = y, var = 0.0)))
     mu <- tstate$mu; v <- tstate$var
@@ -174,6 +175,7 @@ holt_linear <- function(alpha = 0.1, beta = 0.05) {
 
 garch <- function(omega = 0.01, alpha = 0.1, beta = 0.85, eps = 1e-8) {
   stopifnot(omega > 0, alpha >= 0, beta >= 0)
+  force(eps)
   forward <- function(y, tstate = NULL) {
     if (is.null(tstate)) {
       persist <- alpha + beta
@@ -353,6 +355,7 @@ fractional_difference <- function(d = 0.4, window = 50L) {
 
 ar <- function(order = 2L, lam = 0.99, ridge = 1.0, decay = 0.0) {
   stopifnot(order >= 1, lam > 0, lam <= 1, decay >= 0)
+  force(ridge)
   p <- order
   init_P <- function() {
     P <- matrix(0.0, p, p)

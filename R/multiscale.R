@@ -2,6 +2,7 @@
 # Port of skaters/multiscale.py.
 
 multiscale <- function(base, k, scales = NULL, forget = 0.99, max_components = 20L) {
+  force(base); force(forget); force(max_components)
   if (is.null(scales)) scales <- sort(unique(c(1L, as.integer(ceiling(sqrt(k))), as.integer(k))))
   scales <- sort(unique(as.integer(scales[scales >= 1 & scales <= k])))
   stopifnot(length(scales) > 0, scales[1] == 1L)

@@ -20,9 +20,13 @@ dist_combine <- function(dists, weights = NULL) {
   dist_new(w, m, s)
 }
 
-dist_mean <- function(d) sum(d$w * d$m)
+dist_mean <- function(d) {
+  if (isTRUE(d$spliced)) return(spliced_mean(d))
+  sum(d$w * d$m)
+}
 
 dist_var <- function(d) {
+  if (isTRUE(d$spliced)) return(spliced_var(d))
   mu <- dist_mean(d)
   sum(d$w * (d$s^2 + (d$m - mu)^2))
 }
@@ -30,6 +34,7 @@ dist_var <- function(d) {
 dist_std <- function(d) { v <- dist_var(d); if (v > 0) sqrt(v) else 0.0 }
 
 dist_logpdf <- function(d, x) {
+  if (isTRUE(d$spliced)) return(spliced_logpdf(d, x))
   ok <- d$w > 0 & d$s > 0
   if (any(d$s <= 0 & x == d$m & d$w > 0)) return(Inf)
   w <- d$w[ok]; m <- d$m[ok]; s <- d$s[ok]
@@ -41,7 +46,10 @@ dist_logpdf <- function(d, x) {
   b + log(sum(exp(t - b)))
 }
 
-dist_cdf <- function(d, x) sum(d$w * pnorm(x, d$m, d$s))
+dist_cdf <- function(d, x) {
+  if (isTRUE(d$spliced)) return(spliced_cdf(d, x))
+  sum(d$w * pnorm(x, d$m, d$s))
+}
 
 .abs_expectation <- function(m, s) {
   if (s <= 0) return(abs(m))
@@ -49,6 +57,7 @@ dist_cdf <- function(d, x) sum(d$w * pnorm(x, d$m, d$s))
 }
 
 dist_crps <- function(d, x) {
+  if (isTRUE(d$spliced)) return(spliced_crps(d, x))
   t1 <- sum(vapply(seq_along(d$w),
                    function(i) d$w[i] * .abs_expectation(d$m[i] - x, d$s[i]),
                    0.0))
@@ -61,6 +70,7 @@ dist_crps <- function(d, x) {
 }
 
 dist_quantile <- function(d, p, tol = 1e-9, max_iter = 100L) {
+  if (isTRUE(d$spliced)) return(spliced_quantile(d, p, tol = tol, max_iter = max_iter))
   stopifnot(p > 0, p < 1)
   mu <- dist_mean(d); sigma <- sqrt(dist_var(d))
   lo <- mu - 8 * sigma; hi <- mu + 8 * sigma

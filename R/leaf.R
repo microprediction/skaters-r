@@ -2,6 +2,7 @@
 # Port of skaters/leaf.py::leaf.
 
 leaf <- function(k = 1L) {
+  force(k)
   function(y, state = NULL) {
     if (is.null(state)) state <- list(n = 0L, mean = 0.0, m2 = 0.0)
     n <- state$n + 1L
@@ -22,6 +23,7 @@ leaf <- function(k = 1L) {
 # by recency-weighted likelihood EM. Port of leaf.py::scale_mixture_leaf.
 scale_mixture_leaf <- function(k = 1L, gamma = 0.02, scale_alpha = 0.01,
                                scales = .SCALE_BASIS) {
+  force(k); force(gamma); force(scale_alpha)
   C <- scales
   K <- length(C)
   one_idx <- which.min(abs(C - 1.0))
@@ -66,6 +68,7 @@ scale_mixture_leaf <- function(k = 1L, gamma = 0.02, scale_alpha = 0.01,
 # Scale-mixture leaf with weights fit by online CRPS exponentiated gradient.
 # Port of leaf.py::crps_leaf.
 crps_leaf <- function(k = 1L, eta = 1.0, scale_alpha = 0.01, scales = .FINE) {
+  force(k); force(eta); force(scale_alpha)
   C <- scales
   K <- length(C)
   B <- outer(C, C, function(a, b) sqrt(a * a + b * b) * .A0)
@@ -108,6 +111,7 @@ crps_leaf <- function(k = 1L, eta = 1.0, scale_alpha = 0.01, scales = .FINE) {
 # Port of leaf.py::garch_leaf (variance-targeted QMLE grid refit).
 garch_leaf <- function(k = 1L, gamma = 0.02, refit_every = 40L, min_obs = 80L,
                        window = 400L, scales = .SCALE_BASIS) {
+  force(k); force(gamma); force(refit_every); force(min_obs); force(window)
   C <- scales
   K <- length(C)
   one_idx <- which.min(abs(C - 1.0))

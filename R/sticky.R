@@ -3,6 +3,9 @@
 
 sticky <- function(base, k = 1L, propensity_alpha = 0.05, spike_frac = 0.005,
                    thresh_mult = 1.8, max_atoms = 6L, prune_eps = 1e-6) {
+  force(base)   # bind now: callers rebind f <- sticky(f, ...)
+  force(k); force(propensity_alpha); force(spike_frac); force(thresh_mult)
+  force(max_atoms); force(prune_eps)
   function(y, state = NULL) {
     if (is.null(state)) state <- list(base = NULL, vals = numeric(0), wts = numeric(0))
 

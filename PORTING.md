@@ -14,12 +14,21 @@ by the Python reference) at 1e-6. `Rscript tests/parity.R` is the gate.
 | scale_mixture_leaf, crps_leaf, garch_leaf | leaf.py | DONE |
 | ensembles (precision, bayesian) | ensemble.py, bayesian.py | DONE |
 | ema skater | ema.py | DONE |
-| terminal leaf ensemble | terminal.py | open |
+| terminal leaf ensemble | terminal.py | DONE |
 | sticky (lattice) | sticky.py | DONE |
 | multiscale | multiscale.py | DONE |
-| parade (pit/z state) | parade.py | open |
-| tails (GPD splice, 0.13.0 default) | tails.py | open |
-| laplace (the composition) | api.py | open (last) |
+| parade (pit/z state) | parade.py | DONE |
+| tails (GPD splice, 0.13.0 default) | tails.py | DONE |
+| laplace (the composition) | api.py | DONE |
+| adaptive search (dantzig) | search.py | open |
+| spec build path | spec.py | open |
+| periodicity detector | periodicity.py | open |
+| covariance estimators | cov/ | open |
+
+A porting note for R: factories must `force()` their arguments (and any
+wrapper must `force(base)`). R promises otherwise capture loop variables
+by reference, so candidates built in loops silently share the last
+parameter value, and `f <- wrapper(f)` recurses into itself.
 
 Suggested order: transforms and leaves are independent and parallelize
 well; ensembles need `prune` (port its ulp-tolerant pair merge exactly,

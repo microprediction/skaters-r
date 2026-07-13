@@ -2,7 +2,8 @@
 # JS twin. Run: Rscript tests/parity.R
 source("R/dist.R"); source("R/leaf.R"); source("R/transform.R"); source("R/conjugate.R")
 source("R/runstats.R"); source("R/ema.R"); source("R/ensemble.R"); source("R/bayesian.R")
-source("R/multiscale.R"); source("R/sticky.R")
+source("R/multiscale.R"); source("R/sticky.R"); source("R/tails.R"); source("R/terminal.R")
+source("R/parade.R"); source("R/api.R")
 v <- jsonlite::fromJSON("inst/parity/vectors.json", simplifyVector = FALSE)
 series <- unlist(v$series)
 ATOL <- 1e-6; RTOL <- 1e-6
@@ -43,6 +44,11 @@ scenarios[["crps_leaf"]] <- list(k = 1L, sk = crps_leaf(1L))
 scenarios[["garch_leaf"]] <- list(k = 1L, sk = garch_leaf(1L))
 scenarios[["scalemix_ema"]] <- list(
   k = 1L, sk = conjugate(scale_mixture_leaf(1L), ema_transform(0.1), 1L))
+scenarios[["gpd_tails"]] <- list(
+  k = 1L, sk = gpdtails(conjugate(leaf(1L), ema_transform(0.1), 1L),
+                        k = 1L, level = 0.9, nexc = 50L, warmup = 100L))
+scenarios[["pol_laplace"]] <- list(k = 1L, sk = laplace(k = 1L))
+scenarios[["pol_laplace_k3"]] <- list(k = 3L, sk = laplace(k = 3L))
 
 fails <- 0L; checked <- 0L
 check_block <- function(scenarios, series, expected_block) {
