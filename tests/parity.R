@@ -9,9 +9,6 @@ if (nzchar(system.file("parity", "vectors.json", package = "skaters"))) {
   for (.f in sort(list.files("R", full.names = TRUE))) source(.f)
   .vec_path <- "inst/parity/vectors.json"
 }
-source("R/runstats.R"); source("R/ema.R"); source("R/ensemble.R"); source("R/bayesian.R")
-source("R/multiscale.R"); source("R/sticky.R"); source("R/tails.R"); source("R/terminal.R")
-source("R/parade.R"); source("R/api.R")
 v <- jsonlite::fromJSON(.vec_path, simplifyVector = FALSE)
 series <- unlist(v$series)
 ATOL <- 1e-6; RTOL <- 1e-6
