@@ -106,6 +106,25 @@ for (k in c(1L, 3L)) {
   cat(sprintf("ok   checkpoint-resume k=%d (save at 600/1200)\n", k))
 }
 
+# Adaptive search: its state holds only recipes and plain data (the
+# Python reference keeps live callables in the state; the R port rebuilds
+# them from recipes), so it must satisfy the same resume contract, across
+# an expansion boundary (expand at 100 and 200 with the save at 150).
+{
+  ys <- make_series(300L, 13L)
+  full <- run_probed(adaptive_search(k = 1L), ys)
+  first <- run_probed(adaptive_search(k = 1L), ys[1:150])
+  tf <- tempfile(fileext = ".rds")
+  saveRDS(first$state, tf)
+  restored <- readRDS(tf)
+  unlink(tf)
+  resumed <- run_probed(adaptive_search(k = 1L), ys, st = restored, from = 151L)
+  check(identical(resumed$probes, full$probes[151:300]),
+        "search resume: probes differ from uninterrupted run")
+  check(identical(resumed$state, full$state), "search resume: final states differ")
+  cat("ok   checkpoint-resume adaptive_search (save at 150/300)\n")
+}
+
 # The splice must actually be active in the resumed run at k=1, otherwise
 # the checkpoint test is not exercising the tail state.
 {

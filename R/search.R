@@ -4,6 +4,13 @@
 # clamped log-likelihood, expand top performers with new transforms
 # (replaying recent history so children join warm), prune losers.
 # Named adaptive_search here: `search` would mask base::search.
+#
+# One deliberate departure from the Python reference, which stores live
+# callables in the state: here the state holds only recipes and plain
+# data (the package convention), and candidate skaters are rebuilt on
+# demand from their recipes through a per-instance memo. Rebuilding is
+# deterministic, so values match the reference exactly and the state
+# survives saveRDS/readRDS.
 
 # The grammar: list of (name, factory, cost) triples.
 .SEARCH_TRANSFORMS <- list(
@@ -29,40 +36,39 @@
   list("seas(24)", function() seasonal_difference(24L), 1)
 )
 
-.search_entry <- function(skater_fn, depth, recipe, k, cost = 0.0) {
-  list(f = skater_fn, s = NULL, depth = depth, recipe = recipe, cost = cost,
+# The grammar in play: base transforms plus one seasonal per detected
+# period, in detection order (derived from state, never stored in it).
+.search_transforms <- function(detected_periods) {
+  out <- .SEARCH_TRANSFORMS
+  for (p in detected_periods) {
+    pp <- p
+    out[[length(out) + 1L]] <- list(
+      sprintf("seas(%d)", pp),
+      local({ q <- pp; function() seasonal_difference(q) }),
+      2)
+  }
+  out
+}
+
+.search_entry <- function(depth, recipe, k, cost = 0.0) {
+  list(s = NULL, depth = depth, recipe = recipe, cost = cost,
        age = 0L, warmed = FALSE, log_w = rep(0.0, k),
        queues = rep(list(list()), k), dists = NULL)
 }
 
 .search_init_pool <- function(k, cost_budget = Inf) {
   pool <- list()
-  e <- .search_entry(leaf(k = k), 0L, character(0), k, cost = 1.0)
+  e <- .search_entry(0L, character(0), k, cost = 1.0)
   e$warmed <- TRUE
   pool[[1L]] <- e
   for (tr in .SEARCH_TRANSFORMS) {
     cand_cost <- 1.0 + tr[[3]]
     if (cand_cost > cost_budget) next
-    f <- conjugate(leaf(k = k), tr[[2]](), k = k)
-    e <- .search_entry(f, 1L, tr[[1]], k, cost = cand_cost)
+    e <- .search_entry(1L, tr[[1]], k, cost = cand_cost)
     e$warmed <- TRUE
     pool[[length(pool) + 1L]] <- e
   }
   pool
-}
-
-.search_warmup <- function(entry, buffer, k) {
-  for (y in buffer) {
-    r <- entry$f(y, entry$s)
-    entry$s <- r$state
-    entry$dists <- r$dists
-    entry$age <- entry$age + 1L
-  }
-  if (!is.null(entry$dists)) {
-    for (h in seq_len(k)) entry$queues[[h]] <- list(entry$dists[[h]])
-  }
-  entry$warmed <- TRUE
-  entry
 }
 
 .search_build_from_recipe <- function(recipe, k, transforms) {
@@ -92,9 +98,8 @@
       key <- paste(new_recipe, collapse = "|")
       if (key %in% existing) next
       existing <- c(existing, key)
-      child_fn <- .search_build_from_recipe(new_recipe, k, transforms)
       children[[length(children) + 1L]] <- .search_entry(
-        child_fn, length(new_recipe), new_recipe, k, cost = child_cost)
+        length(new_recipe), new_recipe, k, cost = child_cost)
     }
   }
   children
@@ -131,12 +136,24 @@ adaptive_search <- function(k = 1L, learning_rate = 0.5,
   force(cost_budget)
   pd_func <- period_detector()
 
+  # Per-instance memo: recipe key -> live skater. Skaters are pure
+  # functions of the recipe (all mutable state lives in the entry), so
+  # a fresh instance resuming a saved state rebuilds identical ones.
+  memo <- new.env(parent = emptyenv())
+  get_skater <- function(recipe, detected_periods) {
+    key <- paste0("r:", paste(recipe, collapse = "|"))
+    if (is.null(memo[[key]])) {
+      memo[[key]] <- .search_build_from_recipe(
+        recipe, k, .search_transforms(detected_periods))
+    }
+    memo[[key]]
+  }
+
   function(y, state = NULL) {
     if (is.null(state)) {
       state <- list(pool = .search_init_pool(k, cost_budget = cost_budget),
                     n_obs = 0L, buffer = numeric(0), pd_state = NULL,
-                    detected_periods = integer(0),
-                    transforms = .SEARCH_TRANSFORMS)
+                    detected_periods = integer(0))
     }
     state$n_obs <- state$n_obs + 1L
     state$buffer <- c(state$buffer, y)
@@ -147,7 +164,8 @@ adaptive_search <- function(k = 1L, learning_rate = 0.5,
 
     # 1. Run all active candidates.
     for (i in seq_along(pool)) {
-      r <- pool[[i]]$f(y, pool[[i]]$s)
+      f <- get_skater(pool[[i]]$recipe, state$detected_periods)
+      r <- f(y, pool[[i]]$s)
       pool[[i]]$s <- r$state
       pool[[i]]$dists <- r$dists
       pool[[i]]$age <- pool[[i]]$age + 1L
@@ -186,18 +204,27 @@ adaptive_search <- function(k = 1L, learning_rate = 0.5,
       detected <- top_periods(rp$scores, threshold = 0.3, max_periods = 3L)
       for (period in detected) {
         if (!(period %in% state$detected_periods)) {
-          state$detected_periods <- c(state$detected_periods, period)
-          p <- period
-          fac <- local({ pp <- p; function() seasonal_difference(pp) })
-          state$transforms[[length(state$transforms) + 1L]] <-
-            list(sprintf("seas(%d)", period), fac, 2)
+          state$detected_periods <- c(state$detected_periods, as.integer(period))
         }
       }
+      transforms <- .search_transforms(state$detected_periods)
       children <- .search_expand(pool, k, expand_top_n, max_depth,
-                                 transforms = state$transforms,
+                                 transforms = transforms,
                                  cost_budget = cost_budget)
       for (child in children) {
-        pool[[length(pool) + 1L]] <- .search_warmup(child, state$buffer, k)
+        # Replay recent history through the child so it joins warm.
+        f <- get_skater(child$recipe, state$detected_periods)
+        for (yb in state$buffer) {
+          r <- f(yb, child$s)
+          child$s <- r$state
+          child$dists <- r$dists
+          child$age <- child$age + 1L
+        }
+        if (!is.null(child$dists)) {
+          for (h in seq_len(k)) child$queues[[h]] <- list(child$dists[[h]])
+        }
+        child$warmed <- TRUE
+        pool[[length(pool) + 1L]] <- child
       }
       pool <- .search_prune(pool, prune_threshold, max_pool, k)
     }
