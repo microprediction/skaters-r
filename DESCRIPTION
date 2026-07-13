@@ -1,13 +1,13 @@
 Package: skaters
 Title: Online Distributional Time-Series Forecasting by Conjugation
 Version: 0.0.1
-Authors@R: c(
-    person("Peter", "Cotton", email = "peter.cotton@microprediction.com",
-           role = c("aut", "cre")))
+Authors@R: 
+    person("Peter", "Cotton", , "peter.cotton@microprediction.com", role = c("aut", "cre"))
 Description: Port of the Python 'skaters' package: an online, univariate,
     distributional forecaster built from invertible transforms over a
     Gaussian-mixture leaf. Every implemented component is verified against
     the reference implementation's parity vectors to 1e-6.
 License: MIT + file LICENSE
+Suggests:
+    jsonlite
 Encoding: UTF-8
-Suggests: jsonlite
