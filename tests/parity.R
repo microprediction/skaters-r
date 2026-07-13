@@ -120,6 +120,33 @@ repeat_scenarios <- list(
 )
 check_block(repeat_scenarios, repeat_series, v$repeat_scenarios)
 
+# Covariance estimators on the fixed multivariate series.
+vec_series <- lapply(v$vec_series, unlist)
+cov_fns <- list(running = running_cov, ema = ema_cov, ledoit = ledoit_wolf_cov)
+for (nm in names(cov_fns)) {
+  fn <- cov_fns[[nm]]
+  expected <- v$cov[[nm]]
+  st <- NULL; row <- 0L
+  for (i in seq_along(vec_series)) {
+    r <- fn(vec_series[[i]], st); st <- r$state
+    if (i - 1 >= v$burn) {
+      row <- row + 1L
+      got <- c(r$mean, r$cov)
+      exp_ <- suppressWarnings(as.numeric(unlist(expected[[row]])))
+      for (j in seq_along(got)) {
+        checked <- checked + 1L
+        if (is.na(exp_[j])) next
+        if (abs(got[j] - exp_[j]) > ATOL + RTOL * abs(exp_[j])) {
+          fails <- fails + 1L
+          if (fails < 8) cat(sprintf("FAIL cov %s row %d probe %d: got %.9g want %.9g\n",
+                                     nm, row, j, got[j], exp_[j]))
+        }
+      }
+    }
+  }
+  cat(sprintf("ok   cov_%s\n", nm))
+}
+
 cat(sprintf("%d values checked\n", checked))
 if (fails > 0) {
   cat(sprintf("PARITY FAILED: %d\n", fails))

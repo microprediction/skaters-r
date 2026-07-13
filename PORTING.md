@@ -23,7 +23,7 @@ by the Python reference) at 1e-6. `Rscript tests/parity.R` is the gate.
 | adaptive search (dantzig) | search.py | open |
 | spec build path | spec.py | open |
 | periodicity detector | periodicity.py | open |
-| covariance estimators | cov/ | open |
+| covariance estimators (running, ema, ledoit_wolf) | cov/ | DONE |
 
 A porting note for R: factories must `force()` their arguments (and any
 wrapper must `force(base)`). R promises otherwise capture loop variables
