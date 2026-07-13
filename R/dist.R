@@ -83,3 +83,46 @@ dist_affine <- function(d, a, b) {
   stopifnot(a != 0)
   dist_new(d$w, a * d$m + b, abs(a) * d$s)
 }
+
+# Reduce component count by merging closest pairs. Exact port of
+# Dist.prune: sorted components, ulp-tolerant first-pair-within-threshold
+# selection (so platforms that disagree at the last ulp merge the same
+# pairs in the same order), moment-matched merges.
+dist_prune <- function(d, max_components = 20L) {
+  max_components <- max(1L, max_components)
+  if (length(d$w) <= max_components) return(d)
+  ord <- order(d$m, d$s, d$w)
+  w <- d$w[ord]; m <- d$m[ord]; s <- d$s[ord]
+  scale <- abs(m[1]) + abs(m[length(m)]) + 1e-12
+  while (length(w) > max_components) {
+    n <- length(w)
+    best_dist <- Inf
+    for (i in seq_len(n - 1)) for (j in (i + 1):n) {
+      dd <- abs(m[i] - m[j])
+      if (dd < best_dist) best_dist <- dd
+    }
+    thresh <- best_dist + 1e-9 * scale
+    best_i <- NA_integer_; best_j <- NA_integer_
+    for (i in seq_len(n - 1)) {
+      for (j in (i + 1):n) {
+        if (abs(m[i] - m[j]) <= thresh) { best_i <- i; best_j <- j; break }
+      }
+      if (!is.na(best_i)) break
+    }
+    if (is.na(best_i)) { best_i <- 1L; best_j <- 2L }   # NaN means: still terminate
+    wi <- w[best_i]; mi <- m[best_i]; si <- s[best_i]
+    wj <- w[best_j]; mj <- m[best_j]; sj <- s[best_j]
+    w_new <- wi + wj
+    if (w_new < 1e-300) {
+      m_new <- 0.5 * (mi + mj)
+      s_new <- max(si, sj, 1e-12)
+    } else {
+      m_new <- (wi * mi + wj * mj) / w_new
+      v_new <- (wi * (si * si + (mi - m_new)^2) + wj * (sj * sj + (mj - m_new)^2)) / w_new
+      s_new <- sqrt(max(v_new, 0.0))
+    }
+    w[best_i] <- w_new; m[best_i] <- m_new; s[best_i] <- s_new
+    w <- w[-best_j]; m <- m[-best_j]; s <- s[-best_j]
+  }
+  dist_new(w, m, s)
+}

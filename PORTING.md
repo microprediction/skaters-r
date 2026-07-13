@@ -6,16 +6,17 @@ by the Python reference) at 1e-6. `Rscript tests/parity.R` is the gate.
 
 | module | Python source | status |
 |---|---|---|
-| dist (mixture type) | src/skaters/dist.py | DONE (probe surface; prune pending) |
+| dist (mixture type, incl. prune) | src/skaters/dist.py | DONE |
 | leaf | src/skaters/leaf.py::leaf | DONE |
 | difference, ema_transform | src/skaters/transform.py | DONE |
 | conjugate | src/skaters/conjugate.py | DONE |
 | remaining transforms (ar, theta, garch, seasonal, yeo-johnson, ou, frac, ...) | transform.py | DONE |
-| scale_mixture_leaf, crps_leaf, garch_leaf | leaf.py | open |
-| ensembles (precision, bayesian) | ensemble.py, bayesian.py | open (needs prune) |
+| scale_mixture_leaf, crps_leaf, garch_leaf | leaf.py | DONE |
+| ensembles (precision, bayesian) | ensemble.py, bayesian.py | DONE |
+| ema skater | ema.py | DONE |
 | terminal leaf ensemble | terminal.py | open |
-| sticky (lattice) | sticky.py | open |
-| multiscale | multiscale.py | open |
+| sticky (lattice) | sticky.py | DONE |
+| multiscale | multiscale.py | DONE |
 | parade (pit/z state) | parade.py | open |
 | tails (GPD splice, 0.13.0 default) | tails.py | open |
 | laplace (the composition) | api.py | open (last) |

@@ -1,6 +1,8 @@
 # Parity against the Python-generated vectors, same 1e-6 discipline as the
 # JS twin. Run: Rscript tests/parity.R
 source("R/dist.R"); source("R/leaf.R"); source("R/transform.R"); source("R/conjugate.R")
+source("R/runstats.R"); source("R/ema.R"); source("R/ensemble.R"); source("R/bayesian.R")
+source("R/multiscale.R"); source("R/sticky.R")
 v <- jsonlite::fromJSON("inst/parity/vectors.json", simplifyVector = FALSE)
 series <- unlist(v$series)
 ATOL <- 1e-6; RTOL <- 1e-6
@@ -29,34 +31,57 @@ for (k in c(1L, 3L)) {
   add("yeojohnson_half", conjugate(leaf(k), yeo_johnson(0.5), k))
   add("ou", conjugate(leaf(k), ou_transform(0.1), k))
   add("ou_sqrt", conjugate(conjugate(leaf(k), ou_transform(0.1), k), yeo_johnson(0.5), k))
+  add("ema_skater", ema(0.05, k))
+  add("pw_ensemble", precision_weighted_ensemble(list(ema(0.05, k), ema(0.2, k)), k))
+  add("multiscale", multiscale(function(kk) conjugate(leaf(kk), ema_transform(0.1), kk), k))
+  add("bayes_ensemble", bayesian_ensemble(
+    list(ema(0.05, k), conjugate(leaf(k), difference(), k)),
+    k = k, learning_rate = 0.5, complexity_penalty = 0.02, depths = c(1, 1)))
 }
+scenarios[["scale_mixture_leaf"]] <- list(k = 1L, sk = scale_mixture_leaf(1L))
+scenarios[["crps_leaf"]] <- list(k = 1L, sk = crps_leaf(1L))
+scenarios[["garch_leaf"]] <- list(k = 1L, sk = garch_leaf(1L))
+scenarios[["scalemix_ema"]] <- list(
+  k = 1L, sk = conjugate(scale_mixture_leaf(1L), ema_transform(0.1), 1L))
+
 fails <- 0L; checked <- 0L
-for (name in names(scenarios)) {
-  sc <- scenarios[[name]]
-  expected <- v$scenarios[[name]]$out
-  st <- NULL; row <- 0L
-  for (i in seq_along(series)) {
-    r <- sc$sk(series[i], st); st <- r$state
-    if (i - 1 >= v$burn) {
-      row <- row + 1L
-      for (h in seq_len(sc$k)) {
-        got <- probe(r$dists[[h]], v$probe, v$q_lo, v$q_hi)
-        exp_ <- unlist(expected[[row]][[h]])
-        exp_ <- suppressWarnings(as.numeric(exp_))
-        for (j in seq_along(got)) {
-          checked <- checked + 1L
-          if (is.na(exp_[j])) next
-          if (abs(got[j] - exp_[j]) > ATOL + RTOL * abs(exp_[j])) {
-            fails <- fails + 1L
-            if (fails < 8) cat(sprintf("FAIL %s row %d h %d probe %d: got %.9g want %.9g\n",
-                                        name, row, h, j, got[j], exp_[j]))
+check_block <- function(scenarios, series, expected_block) {
+  for (name in names(scenarios)) {
+    sc <- scenarios[[name]]
+    expected <- expected_block[[name]]$out
+    st <- NULL; row <- 0L
+    for (i in seq_along(series)) {
+      r <- sc$sk(series[i], st); st <- r$state
+      if (i - 1 >= v$burn) {
+        row <- row + 1L
+        for (h in seq_len(sc$k)) {
+          got <- probe(r$dists[[h]], v$probe, v$q_lo, v$q_hi)
+          exp_ <- unlist(expected[[row]][[h]])
+          exp_ <- suppressWarnings(as.numeric(exp_))
+          for (j in seq_along(got)) {
+            checked <<- checked + 1L
+            if (is.na(exp_[j])) next
+            if (abs(got[j] - exp_[j]) > ATOL + RTOL * abs(exp_[j])) {
+              fails <<- fails + 1L
+              if (fails < 8) cat(sprintf("FAIL %s row %d h %d probe %d: got %.9g want %.9g\n",
+                                          name, row, h, j, got[j], exp_[j]))
+            }
           }
         }
       }
     }
+    cat(sprintf("ok   %-9s\n", name))
   }
-  cat(sprintf("ok   %-9s\n", name))
 }
+check_block(scenarios, series, v$scenarios)
+
+# Sticky/dirac on the repeat-heavy series (exact repeats + 0.25-grid jumps).
+repeat_series <- unlist(v$repeat_series)
+repeat_scenarios <- list(
+  sticky_ema = list(k = 1L, sk = sticky(conjugate(leaf(1L), ema_transform(0.1), 1L), k = 1L))
+)
+check_block(repeat_scenarios, repeat_series, v$repeat_scenarios)
+
 cat(sprintf("%d values checked\n", checked))
 if (fails > 0) { cat(sprintf("PARITY FAILED: %d\n", fails)); quit(status = 1) }
 cat("PARITY OK\n")
