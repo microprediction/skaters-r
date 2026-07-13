@@ -20,7 +20,7 @@ by the Python reference) at 1e-6. `Rscript tests/parity.R` is the gate.
 | parade (pit/z state) | parade.py | DONE |
 | tails (GPD splice, 0.13.0 default) | tails.py | DONE |
 | laplace (the composition) | api.py | DONE |
-| adaptive search (dantzig) | search.py | open |
+| adaptive search (`adaptive_search`; `search` would mask base) | search.py | DONE |
 | spec build path | spec.py | DONE |
 | periodicity detector | periodicity.py | DONE |
 | covariance estimators (running, ema, ledoit_wolf) | cov/ | DONE |

@@ -73,6 +73,8 @@ scenarios[["gpd_tails"]] <- list(
   k = 1L,
   sk = gpdtails(conjugate(leaf(1L), ema_transform(0.1), 1L), k = 1L, level = 0.9, nexc = 50L, warmup = 100L)
 )
+scenarios[["search_default"]] <- list(
+  k = 1L, sk = adaptive_search(k = 1L, expand_interval = 50L))
 scenarios[["spec_diff_ensemble"]] <- list(k = 1L, sk = spec_build(
   conjugate_spec(ensemble_spec(ema_spec(0.01, 1L), ema_spec(0.1, 1L), k = 1L),
                  diff_spec())))
