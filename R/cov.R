@@ -51,13 +51,15 @@ ledoit_wolf_cov <- function(y, state = NULL, alpha = 0.05, shrinkage = 0.5) {
   s <- ifelse(state$var > 1e-16, sqrt(state$var), 1e-8)
   corr <- state$corr
   for (i in seq_len(n)) {
-    if (i < n) for (j in (i + 1L):n) {
-      z_cross <- (delta[i] / s[i]) * (delta[j] / s[j])
-      idx <- (i - 1L) * n + j
-      r <- (1 - alpha) * corr[idx] + alpha * z_cross
-      r <- max(-1.0, min(1.0, r))
-      corr[idx] <- r
-      corr[(j - 1L) * n + i] <- r
+    if (i < n) {
+      for (j in (i + 1L):n) {
+        z_cross <- (delta[i] / s[i]) * (delta[j] / s[j])
+        idx <- (i - 1L) * n + j
+        r <- (1 - alpha) * corr[idx] + alpha * z_cross
+        r <- max(-1.0, min(1.0, r))
+        corr[idx] <- r
+        corr[(j - 1L) * n + i] <- r
+      }
     }
   }
   state$corr <- corr
@@ -67,8 +69,11 @@ ledoit_wolf_cov <- function(y, state = NULL, alpha = 0.05, shrinkage = 0.5) {
   for (i in seq_len(n)) {
     for (j in seq_len(n)) {
       idx <- (i - 1L) * n + j
-      shrunk[idx] <- if (i == j) state$var[i]
-                     else (1 - shrinkage) * corr[idx] * s[i] * s[j]
+      shrunk[idx] <- if (i == j) {
+        state$var[i]
+      } else {
+        (1 - shrinkage) * corr[idx] * s[i] * s[j]
+      }
     }
   }
   list(mean = state$mean, cov = shrunk, state = state)

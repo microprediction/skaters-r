@@ -74,10 +74,15 @@ scenarios[["gpd_tails"]] <- list(
   sk = gpdtails(conjugate(leaf(1L), ema_transform(0.1), 1L), k = 1L, level = 0.9, nexc = 50L, warmup = 100L)
 )
 scenarios[["search_default"]] <- list(
-  k = 1L, sk = adaptive_search(k = 1L, expand_interval = 50L))
-scenarios[["spec_diff_ensemble"]] <- list(k = 1L, sk = spec_build(
-  conjugate_spec(ensemble_spec(ema_spec(0.01, 1L), ema_spec(0.1, 1L), k = 1L),
-                 diff_spec())))
+  k = 1L,
+  sk = adaptive_search(k = 1L, expand_interval = 50L)
+)
+scenarios[["spec_diff_ensemble"]] <- list(
+  k = 1L,
+  sk = spec_build(
+    conjugate_spec(ensemble_spec(ema_spec(0.01, 1L), ema_spec(0.1, 1L), k = 1L), diff_spec())
+  )
+)
 scenarios[["spec_ema"]] <- list(k = 1L, sk = spec_build(ema_spec(0.05, 1L)))
 scenarios[["pol_laplace"]] <- list(k = 1L, sk = laplace(k = 1L))
 scenarios[["pol_laplace_k3"]] <- list(k = 3L, sk = laplace(k = 3L))
@@ -129,17 +134,20 @@ check_block(repeat_scenarios, repeat_series, v$repeat_scenarios)
 # Periodicity detector: ranked (lag, acf) per step on the main series.
 {
   pd <- period_detector()
-  st <- NULL; row <- 0L
+  st <- NULL
+  row <- 0L
   for (i in seq_along(series)) {
-    r <- pd(series[i], st); st <- r$state
+    r <- pd(series[i], st)
+    st <- r$state
     if (i - 1 >= v$burn) {
       row <- row + 1L
       expected <- v$periodicity[[row]]
       checked <- checked + 1L
       if (length(r$scores) != length(expected)) {
         fails <- fails + 1L
-        if (fails < 8) cat(sprintf("FAIL periodicity row %d: %d scores, want %d\n",
-                                   row, length(r$scores), length(expected)))
+        if (fails < 8) {
+          cat(sprintf("FAIL periodicity row %d: %d scores, want %d\n", row, length(r$scores), length(expected)))
+        }
         next
       }
       for (j in seq_along(expected)) {
@@ -149,14 +157,16 @@ check_block(repeat_scenarios, repeat_series, v$repeat_scenarios)
         checked <- checked + 2L
         if (as.integer(got[1]) != lag_want) {
           fails <- fails + 1L
-          if (fails < 8) cat(sprintf("FAIL periodicity row %d rank %d: lag %d want %d\n",
-                                     row, j, as.integer(got[1]), lag_want))
+          if (fails < 8) {
+            cat(sprintf("FAIL periodicity row %d rank %d: lag %d want %d\n", row, j, as.integer(got[1]), lag_want))
+          }
         }
-        if (!is.na(acf_want) &&
-            abs(got[2] - acf_want) > ATOL + RTOL * abs(acf_want)) {
+        if (
+          !is.na(acf_want) &&
+            abs(got[2] - acf_want) > ATOL + RTOL * abs(acf_want)
+        ) {
           fails <- fails + 1L
-          if (fails < 8) cat(sprintf("FAIL periodicity row %d rank %d: acf %.9g want %.9g\n",
-                                     row, j, got[2], acf_want))
+          if (fails < 8) cat(sprintf("FAIL periodicity row %d rank %d: acf %.9g want %.9g\n", row, j, got[2], acf_want))
         }
       }
     }
@@ -170,20 +180,23 @@ cov_fns <- list(running = running_cov, ema = ema_cov, ledoit = ledoit_wolf_cov)
 for (nm in names(cov_fns)) {
   fn <- cov_fns[[nm]]
   expected <- v$cov[[nm]]
-  st <- NULL; row <- 0L
+  st <- NULL
+  row <- 0L
   for (i in seq_along(vec_series)) {
-    r <- fn(vec_series[[i]], st); st <- r$state
+    r <- fn(vec_series[[i]], st)
+    st <- r$state
     if (i - 1 >= v$burn) {
       row <- row + 1L
       got <- c(r$mean, r$cov)
       exp_ <- suppressWarnings(as.numeric(unlist(expected[[row]])))
       for (j in seq_along(got)) {
         checked <- checked + 1L
-        if (is.na(exp_[j])) next
+        if (is.na(exp_[j])) {
+          next
+        }
         if (abs(got[j] - exp_[j]) > ATOL + RTOL * abs(exp_[j])) {
           fails <- fails + 1L
-          if (fails < 8) cat(sprintf("FAIL cov %s row %d probe %d: got %.9g want %.9g\n",
-                                     nm, row, j, got[j], exp_[j]))
+          if (fails < 8) cat(sprintf("FAIL cov %s row %d probe %d: got %.9g want %.9g\n", nm, row, j, got[j], exp_[j]))
         }
       }
     }

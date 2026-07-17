@@ -29,7 +29,9 @@ spec_build <- function(spec) {
 
 .spec_build_transform <- function(spec) {
   op <- spec$op
-  if (op == "diff") return(difference())
+  if (op == "diff") {
+    return(difference())
+  }
   if (op == "frac") {
     w <- if (is.null(spec$window)) 50L else spec$window
     return(fractional_difference(d = spec$d, window = w))
@@ -38,50 +40,69 @@ spec_build <- function(spec) {
     a <- if (is.null(spec$alpha)) 0.05 else spec$alpha
     return(standardize(alpha = a))
   }
-  if (op == "ema_t") return(ema_transform(alpha = spec$alpha))
+  if (op == "ema_t") {
+    return(ema_transform(alpha = spec$alpha))
+  }
   stop(sprintf("Unknown transform op: %s", op))
 }
 
 .spec_infer_k <- function(spec) {
-  if (!is.null(spec$k)) return(spec$k)
-  if (!is.null(spec$skater)) return(.spec_infer_k(spec$skater))
-  if (!is.null(spec$skaters)) return(.spec_infer_k(spec$skaters[[1]]))
+  if (!is.null(spec$k)) {
+    return(spec$k)
+  }
+  if (!is.null(spec$skater)) {
+    return(.spec_infer_k(spec$skater))
+  }
+  if (!is.null(spec$skaters)) {
+    return(.spec_infer_k(spec$skaters[[1]]))
+  }
   stop("Cannot infer k from spec")
 }
 
 .spec_fmt <- function(x) {
-  if (x == as.integer(x)) return(sprintf("%d", as.integer(x)))
+  if (x == as.integer(x)) {
+    return(sprintf("%d", as.integer(x)))
+  }
   sprintf("%.6g", x)
 }
 
 spec_name <- function(spec) {
   op <- spec$op
-  if (op == "leaf") return("leaf")
-  if (op == "ema") return(sprintf("ema(%s)", .spec_fmt(spec$alpha)))
+  if (op == "leaf") {
+    return("leaf")
+  }
+  if (op == "ema") {
+    return(sprintf("ema(%s)", .spec_fmt(spec$alpha)))
+  }
   if (op == "ensemble") {
     inner <- paste(vapply(spec$skaters, spec_name, ""), collapse = ",")
     return(sprintf("ensemble(%s)", inner))
   }
   if (op == "conjugate") {
-    return(sprintf("%s|%s", .spec_transform_name(spec$transform),
-                   spec_name(spec$skater)))
+    return(sprintf("%s|%s", .spec_transform_name(spec$transform), spec_name(spec$skater)))
   }
   stop(sprintf("Unknown op: %s", op))
 }
 
 .spec_transform_name <- function(spec) {
   op <- spec$op
-  if (op == "diff") return("diff")
+  if (op == "diff") {
+    return("diff")
+  }
   if (op == "frac") {
     w <- if (is.null(spec$window)) 50L else spec$window
-    if (w == 50) return(sprintf("frac(%s)", .spec_fmt(spec$d)))
+    if (w == 50) {
+      return(sprintf("frac(%s)", .spec_fmt(spec$d)))
+    }
     return(sprintf("frac(%s,w=%d)", .spec_fmt(spec$d), w))
   }
   if (op == "std") {
     a <- if (is.null(spec$alpha)) 0.05 else spec$alpha
     return(sprintf("std(%s)", .spec_fmt(a)))
   }
-  if (op == "ema_t") return(sprintf("ema_t(%s)", .spec_fmt(spec$alpha)))
+  if (op == "ema_t") {
+    return(sprintf("ema_t(%s)", .spec_fmt(spec$alpha)))
+  }
   stop(sprintf("Unknown transform op: %s", op))
 }
 
@@ -89,8 +110,9 @@ spec_name <- function(spec) {
 leaf_spec <- function(k = 1L) list(op = "leaf", k = k)
 ema_spec <- function(alpha = 0.05, k = 1L) list(op = "ema", alpha = alpha, k = k)
 ensemble_spec <- function(..., k = 1L) list(op = "ensemble", k = k, skaters = list(...))
-conjugate_spec <- function(skater_spec, transform_spec)
+conjugate_spec <- function(skater_spec, transform_spec) {
   list(op = "conjugate", skater = skater_spec, transform = transform_spec)
+}
 diff_spec <- function() list(op = "diff")
 frac_spec <- function(d = 0.4, window = 50L) list(op = "frac", d = d, window = window)
 std_spec <- function(alpha = 0.05) list(op = "std", alpha = alpha)

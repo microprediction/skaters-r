@@ -13,7 +13,9 @@
 if (nzchar(system.file("parity", "vectors.json", package = "skaters"))) {
   library(skaters)
 } else {
-  for (.f in sort(list.files("R", full.names = TRUE))) source(.f)
+  for (.f in sort(list.files("R", full.names = TRUE))) {
+    source(.f)
+  }
 }
 
 failures <- 0L
@@ -32,9 +34,14 @@ lcg <- function(seed) {
   }
 }
 gauss <- function(rand) {
-  u <- 0.0; v <- 0.0
-  while (u == 0) u <- rand()
-  while (v == 0) v <- rand()
+  u <- 0.0
+  v <- 0.0
+  while (u == 0) {
+    u <- rand()
+  }
+  while (v == 0) {
+    v <- rand()
+  }
   sqrt(-2.0 * log(u)) * cos(2.0 * pi * v)
 }
 
@@ -51,15 +58,23 @@ make_series <- function(n, seed) {
 
 probe <- function(dists) {
   unlist(lapply(dists, function(d) {
-    c(dist_mean(d), dist_std(d), dist_logpdf(d, 0.3), dist_cdf(d, 0.3),
-      dist_quantile(d, 0.1), dist_quantile(d, 0.9), dist_crps(d, 0.3))
+    c(
+      dist_mean(d),
+      dist_std(d),
+      dist_logpdf(d, 0.3),
+      dist_cdf(d, 0.3),
+      dist_quantile(d, 0.1),
+      dist_quantile(d, 0.9),
+      dist_crps(d, 0.3)
+    )
   }))
 }
 
 run_probed <- function(f, ys, st = NULL, from = 1L) {
   out <- vector("list", length(ys) - from + 1L)
   for (i in from:length(ys)) {
-    r <- f(ys[i], st); st <- r$state
+    r <- f(ys[i], st)
+    st <- r$state
     out[[i - from + 1L]] <- probe(r$dists)
   }
   list(probes = out, state = st)
@@ -72,12 +87,9 @@ for (k in c(1L, 3L)) {
   ys <- make_series(800L, 7L)
   a <- run_probed(laplace(k = k), ys)
   b <- run_probed(laplace(k = k), ys)
-  check(identical(a$probes, b$probes),
-        sprintf("determinism k=%d: probe streams differ", k))
-  check(identical(a$state, b$state),
-        sprintf("determinism k=%d: final states differ", k))
-  cat(sprintf("ok   determinism k=%d (800 ticks, %d probes/tick)\n",
-              k, length(a$probes[[1]])))
+  check(identical(a$probes, b$probes), sprintf("determinism k=%d: probe streams differ", k))
+  check(identical(a$state, b$state), sprintf("determinism k=%d: final states differ", k))
+  cat(sprintf("ok   determinism k=%d (800 ticks, %d probes/tick)\n", k, length(a$probes[[1]])))
 }
 
 # --- checkpoint-resume -----------------------------------------------------
@@ -95,14 +107,14 @@ for (k in c(1L, 3L)) {
   saveRDS(first$state, tf)
   restored <- readRDS(tf)
   unlink(tf)
-  check(identical(restored, first$state),
-        sprintf("resume k=%d: state changed by RDS round-trip", k))
+  check(identical(restored, first$state), sprintf("resume k=%d: state changed by RDS round-trip", k))
 
   resumed <- run_probed(laplace(k = k), ys, st = restored, from = 601L)
-  check(identical(resumed$probes, full$probes[601:1200]),
-        sprintf("resume k=%d: resumed probes differ from uninterrupted run", k))
-  check(identical(resumed$state, full$state),
-        sprintf("resume k=%d: final states differ", k))
+  check(
+    identical(resumed$probes, full$probes[601:1200]),
+    sprintf("resume k=%d: resumed probes differ from uninterrupted run", k)
+  )
+  check(identical(resumed$state, full$state), sprintf("resume k=%d: final states differ", k))
   cat(sprintf("ok   checkpoint-resume k=%d (save at 600/1200)\n", k))
 }
 
@@ -119,8 +131,7 @@ for (k in c(1L, 3L)) {
   restored <- readRDS(tf)
   unlink(tf)
   resumed <- run_probed(adaptive_search(k = 1L), ys, st = restored, from = 151L)
-  check(identical(resumed$probes, full$probes[151:300]),
-        "search resume: probes differ from uninterrupted run")
+  check(identical(resumed$probes, full$probes[151:300]), "search resume: probes differ from uninterrupted run")
   check(identical(resumed$state, full$state), "search resume: final states differ")
   cat("ok   checkpoint-resume adaptive_search (save at 150/300)\n")
 }
@@ -130,8 +141,13 @@ for (k in c(1L, 3L)) {
 {
   ys <- make_series(1200L, 11L)
   f <- laplace(1L)
-  st <- NULL; d <- NULL
-  for (y in ys) { r <- f(y, st); st <- r$state; d <- r$dists[[1]] }
+  st <- NULL
+  d <- NULL
+  for (y in ys) {
+    r <- f(y, st)
+    st <- r$state
+    d <- r$dists[[1]]
+  }
   check(isTRUE(d$spliced), "resume: splice not active at 1200 ticks")
   cat("ok   splice active across checkpoint\n")
 }

@@ -12,7 +12,9 @@
 if (nzchar(system.file("parity", "vectors.json", package = "skaters"))) {
   library(skaters)
 } else {
-  for (.f in sort(list.files("R", full.names = TRUE))) source(.f)
+  for (.f in sort(list.files("R", full.names = TRUE))) {
+    source(.f)
+  }
 }
 
 # Deterministic RNG (same LCG as the JS gate; no set.seed dependence on
@@ -25,9 +27,14 @@ lcg <- function(seed) {
   }
 }
 gauss <- function(rand) {
-  u <- 0.0; v <- 0.0
-  while (u == 0) u <- rand()
-  while (v == 0) v <- rand()
+  u <- 0.0
+  v <- 0.0
+  while (u == 0) {
+    u <- rand()
+  }
+  while (v == 0) {
+    v <- rand()
+  }
   sqrt(-2.0 * log(u)) * cos(2.0 * pi * v)
 }
 
@@ -41,11 +48,10 @@ check <- function(cond, label) {
 
 assert_wellformed <- function(d, y_near, label) {
   lp <- dist_logpdf(d, y_near)
-  check(!is.na(lp), sprintf("%s: logpdf NaN", label))   # +/-Inf tolerated
+  check(!is.na(lp), sprintf("%s: logpdf NaN", label)) # +/-Inf tolerated
   cv <- dist_cdf(d, y_near)
   check(cv >= 0.0 && cv <= 1.0, sprintf("%s: cdf out of [0,1]", label))
-  qs <- vapply(c(0.001, 0.25, 0.5, 0.75, 0.999),
-               function(p) dist_quantile(d, p), 0.0)
+  qs <- vapply(c(0.001, 0.25, 0.5, 0.75, 0.999), function(p) dist_quantile(d, p), 0.0)
   check(all(is.finite(qs)), sprintf("%s: non-finite quantile", label))
   check(all(diff(qs) >= -1e-9), sprintf("%s: quantiles unordered", label))
   probes <- c(qs[1] - 1.0, qs, qs[length(qs)] + 1.0)
@@ -55,9 +61,12 @@ assert_wellformed <- function(d, y_near, label) {
 
 soak <- function(ys, label) {
   f <- laplace(1L)
-  st <- NULL; dists <- NULL
+  st <- NULL
+  dists <- NULL
   for (t in seq_along(ys)) {
-    r <- f(ys[t], st); st <- r$state; dists <- r$dists
+    r <- f(ys[t], st)
+    st <- r$state
+    dists <- r$dists
     if (t > 1 && (t - 1) %% 997 == 0) assert_wellformed(dists[[1]], ys[t], label)
   }
   assert_wellformed(dists[[1]], ys[length(ys)], label)
@@ -74,7 +83,9 @@ cat("ok   constant\n")
   v <- 1.0
   ys <- numeric(6000)
   for (i in 1:6000) {
-    if (rand() >= 0.7) v <- v + c(-0.25, 0.25, 0.5)[floor(rand() * 3) + 1]
+    if (rand() >= 0.7) {
+      v <- v + c(-0.25, 0.25, 0.5)[floor(rand() * 3) + 1]
+    }
     ys[i] <- v
   }
   soak(ys, "lattice")
@@ -86,23 +97,29 @@ cat("ok   constant\n")
   rand <- lcg(23)
   f <- laplace(1L)
   st <- NULL
-  for (i in 1:3000) { r <- f(gauss(rand), st); st <- r$state }
-  r <- f(1e9, st); st <- r$state                     # the insult
+  for (i in 1:3000) {
+    r <- f(gauss(rand), st)
+    st <- r$state
+  }
+  r <- f(1e9, st)
+  st <- r$state # the insult
   assert_wellformed(r$dists[[1]], 0.0, "spike:after")
-  alarms <- 0L; n <- 0L
+  alarms <- 0L
+  n <- 0L
   for (i in 1:3000) {
     y <- gauss(rand)
-    r <- f(y, st); st <- r$state
+    r <- f(y, st)
+    st <- r$state
     z <- st$z[1]
-    if (i > 1001 && !is.na(z)) {                     # mjs: i > 1000, 0-based
+    if (i > 1001 && !is.na(z)) {
+      # mjs: i > 1000, 0-based
       n <- n + 1L
-      if (abs(z) > 2.5758) alarms <- alarms + 1L     # ~1e-2 two-sided
+      if (abs(z) > 2.5758) alarms <- alarms + 1L # ~1e-2 two-sided
     }
     if ((i - 1) %% 500 == 0) assert_wellformed(r$dists[[1]], y, "spike:recovery")
   }
   check(n > 1500, "spike: too few matured ticks")
-  check(alarms / n < 0.06,
-        sprintf("spike: alarm rate %.4f after recovery", alarms / n))
+  check(alarms / n < 0.06, sprintf("spike: alarm rate %.4f after recovery", alarms / n))
   cat(sprintf("ok   spike (alarm rate %.4f on %d matured ticks)\n", alarms / n, n))
 }
 
@@ -111,11 +128,16 @@ cat("ok   constant\n")
   rand <- lcg(29)
   f <- laplace(1L)
   st <- NULL
-  for (i in 1:1500) { r <- f(gauss(rand), st); st <- r$state }
-  r <- f(1e300, st); st <- r$state                   # near the double limit
+  for (i in 1:1500) {
+    r <- f(gauss(rand), st)
+    st <- r$state
+  }
+  r <- f(1e300, st)
+  st <- r$state # near the double limit
   assert_wellformed(r$dists[[1]], 0.0, "extreme:after")
   for (i in 1:1500) {
-    r <- f(gauss(rand), st); st <- r$state
+    r <- f(gauss(rand), st)
+    st <- r$state
     if ((i - 1) %% 500 == 0) assert_wellformed(r$dists[[1]], 0.0, "extreme:recovery")
   }
   cat("ok   extreme finite tick\n")
@@ -124,9 +146,7 @@ cat("ok   constant\n")
 # 4. scale collapse and recovery
 {
   rand <- lcg(31)
-  ys <- c(vapply(1:2000, function(i) gauss(rand), 0.0),
-          rep(0.0, 2000),
-          vapply(1:2000, function(i) gauss(rand), 0.0))
+  ys <- c(vapply(1:2000, function(i) gauss(rand), 0.0), rep(0.0, 2000), vapply(1:2000, function(i) gauss(rand), 0.0))
   soak(ys, "collapse")
   cat("ok   collapse\n")
 }
@@ -150,23 +170,25 @@ cat("ok   constant\n")
 {
   rand <- lcg(53)
   f <- laplace(1L)
-  st <- NULL; dists <- NULL
+  st <- NULL
+  dists <- NULL
   spliced_seen <- FALSE
   for (i in 1:3000) {
     y <- gauss(rand)
-    r <- f(y, st); st <- r$state; dists <- r$dists
-    if (isTRUE(dists[[1]]$spliced)) spliced_seen <- TRUE
+    r <- f(y, st)
+    st <- r$state
+    dists <- r$dists
+    if (isTRUE(dists[[1]]$spliced)) {
+      spliced_seen <- TRUE
+    }
     if ((i - 1) %% 500 == 0 && i > 1) assert_wellformed(dists[[1]], y, "soak3000")
   }
   d <- dists[[1]]
   check(spliced_seen, "soak3000: splice never activated")
   check(isTRUE(d$spliced), "soak3000: final predictive not spliced")
-  check(is.finite(d$t_lo) && is.finite(d$t_up) && d$t_lo < d$t_up,
-        "soak3000: splice thresholds malformed")
-  check(d$zeta_lo > 0 && d$zeta_lo < 1 && d$zeta_up > 0 && d$zeta_up < 1,
-        "soak3000: splice tail masses out of (0,1)")
-  check(is.finite(d$g_lo) && d$s_lo > 0 && is.finite(d$g_up) && d$s_up > 0,
-        "soak3000: GPD parameters malformed")
+  check(is.finite(d$t_lo) && is.finite(d$t_up) && d$t_lo < d$t_up, "soak3000: splice thresholds malformed")
+  check(d$zeta_lo > 0 && d$zeta_lo < 1 && d$zeta_up > 0 && d$zeta_up < 1, "soak3000: splice tail masses out of (0,1)")
+  check(is.finite(d$g_lo) && d$s_lo > 0 && is.finite(d$g_up) && d$s_up > 0, "soak3000: GPD parameters malformed")
   assert_wellformed(d, 0.0, "soak3000:final")
   # Tail state must round-trip through serialization (the Python test
   # json-dumps it; RDS is the R equivalent).

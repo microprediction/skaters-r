@@ -44,16 +44,28 @@
     pp <- p
     out[[length(out) + 1L]] <- list(
       sprintf("seas(%d)", pp),
-      local({ q <- pp; function() seasonal_difference(q) }),
-      2)
+      local({
+        q <- pp
+        function() seasonal_difference(q)
+      }),
+      2
+    )
   }
   out
 }
 
 .search_entry <- function(depth, recipe, k, cost = 0.0) {
-  list(s = NULL, depth = depth, recipe = recipe, cost = cost,
-       age = 0L, warmed = FALSE, log_w = rep(0.0, k),
-       queues = rep(list(list()), k), dists = NULL)
+  list(
+    s = NULL,
+    depth = depth,
+    recipe = recipe,
+    cost = cost,
+    age = 0L,
+    warmed = FALSE,
+    log_w = rep(0.0, k),
+    queues = rep(list(list()), k),
+    dists = NULL
+  )
 }
 
 .search_init_pool <- function(k, cost_budget = Inf) {
@@ -63,7 +75,9 @@
   pool[[1L]] <- e
   for (tr in .SEARCH_TRANSFORMS) {
     cand_cost <- 1.0 + tr[[3]]
-    if (cand_cost > cost_budget) next
+    if (cand_cost > cost_budget) {
+      next
+    }
     e <- .search_entry(1L, tr[[1]], k, cost = cand_cost)
     e$warmed <- TRUE
     pool[[length(pool) + 1L]] <- e
@@ -73,9 +87,13 @@
 
 .search_build_from_recipe <- function(recipe, k, transforms) {
   lookup <- new.env(parent = emptyenv())
-  for (tr in transforms) assign(tr[[1]], tr[[2]], envir = lookup)  # last wins
+  for (tr in transforms) {
+    assign(tr[[1]], tr[[2]], envir = lookup)
+  } # last wins
   f <- leaf(k = k)
-  for (t_name in recipe) f <- conjugate(f, get(t_name, envir = lookup)(), k = k)
+  for (t_name in recipe) {
+    f <- conjugate(f, get(t_name, envir = lookup)(), k = k)
+  }
   f
 }
 
@@ -87,26 +105,43 @@
   children <- list()
   for (pi in ord[seq_len(min(top_n, length(ord)))]) {
     parent <- pool[[pi]]
-    if (parent$depth >= max_depth) next
+    if (parent$depth >= max_depth) {
+      next
+    }
     for (tr in transforms) {
-      t_name <- tr[[1]]; t_cost <- tr[[3]]
+      t_name <- tr[[1]]
+      t_cost <- tr[[3]]
       child_cost <- parent$cost + t_cost
-      if (child_cost > cost_budget) next
-      if (length(parent$recipe) > 0 &&
-          parent$recipe[length(parent$recipe)] == t_name) next
+      if (child_cost > cost_budget) {
+        next
+      }
+      if (
+        length(parent$recipe) > 0 &&
+          parent$recipe[length(parent$recipe)] == t_name
+      ) {
+        next
+      }
       new_recipe <- c(parent$recipe, t_name)
       key <- paste(new_recipe, collapse = "|")
-      if (key %in% existing) next
+      if (key %in% existing) {
+        next
+      }
       existing <- c(existing, key)
       children[[length(children) + 1L]] <- .search_entry(
-        length(new_recipe), new_recipe, k, cost = child_cost)
+        length(new_recipe),
+        new_recipe,
+        k,
+        cost = child_cost
+      )
     }
   }
   children
 }
 
 .search_prune <- function(pool, threshold, max_pool, k) {
-  if (length(pool) <= 1) return(pool)
+  if (length(pool) <= 1) {
+    return(pool)
+  }
   avg <- function(e) sum(e$log_w) / k
   best <- max(vapply(pool, avg, 0.0))
   i <- 1L
@@ -118,21 +153,35 @@
     }
   }
   while (length(pool) > max_pool) {
-    worst <- which.min(vapply(pool, avg, 0.0))   # first argmin, as in Python
+    worst <- which.min(vapply(pool, avg, 0.0)) # first argmin, as in Python
     pool[[worst]] <- NULL
   }
   pool
 }
 
-adaptive_search <- function(k = 1L, learning_rate = 0.5,
-                            complexity_penalty = 0.02, max_pool = 30L,
-                            expand_interval = 100L, expand_top_n = 3L,
-                            max_depth = 3L, replay_buffer = 500L,
-                            prune_threshold = -50.0, max_components = 20L,
-                            cost_budget = Inf) {
-  force(k); force(learning_rate); force(complexity_penalty); force(max_pool)
-  force(expand_interval); force(expand_top_n); force(max_depth)
-  force(replay_buffer); force(prune_threshold); force(max_components)
+adaptive_search <- function(
+  k = 1L,
+  learning_rate = 0.5,
+  complexity_penalty = 0.02,
+  max_pool = 30L,
+  expand_interval = 100L,
+  expand_top_n = 3L,
+  max_depth = 3L,
+  replay_buffer = 500L,
+  prune_threshold = -50.0,
+  max_components = 20L,
+  cost_budget = Inf
+) {
+  force(k)
+  force(learning_rate)
+  force(complexity_penalty)
+  force(max_pool)
+  force(expand_interval)
+  force(expand_top_n)
+  force(max_depth)
+  force(replay_buffer)
+  force(prune_threshold)
+  force(max_components)
   force(cost_budget)
   pd_func <- period_detector()
 
@@ -144,16 +193,23 @@ adaptive_search <- function(k = 1L, learning_rate = 0.5,
     key <- paste0("r:", paste(recipe, collapse = "|"))
     if (is.null(memo[[key]])) {
       memo[[key]] <- .search_build_from_recipe(
-        recipe, k, .search_transforms(detected_periods))
+        recipe,
+        k,
+        .search_transforms(detected_periods)
+      )
     }
     memo[[key]]
   }
 
   function(y, state = NULL) {
     if (is.null(state)) {
-      state <- list(pool = .search_init_pool(k, cost_budget = cost_budget),
-                    n_obs = 0L, buffer = numeric(0), pd_state = NULL,
-                    detected_periods = integer(0))
+      state <- list(
+        pool = .search_init_pool(k, cost_budget = cost_budget),
+        n_obs = 0L,
+        buffer = numeric(0),
+        pd_state = NULL,
+        detected_periods = integer(0)
+      )
     }
     state$n_obs <- state$n_obs + 1L
     state$buffer <- c(state$buffer, y)
@@ -184,10 +240,15 @@ adaptive_search <- function(k = 1L, learning_rate = 0.5,
           q <- q[-1L]
           if (e$warmed) {
             lp <- dist_logpdf(past, y)
-            if (is.na(lp) || lp < -20.0) lp <- -20.0
-            if (lp > 20.0) lp <- 20.0
+            if (is.na(lp) || lp < -20.0) {
+              lp <- -20.0
+            }
+            if (lp > 20.0) {
+              lp <- 20.0
+            }
             e$log_w[h] <- e$log_w[h] +
-              learning_rate * lp - complexity_penalty * e$depth
+              learning_rate * lp -
+              complexity_penalty * e$depth
           }
         }
         e$queues[[h]] <- q
@@ -208,9 +269,7 @@ adaptive_search <- function(k = 1L, learning_rate = 0.5,
         }
       }
       transforms <- .search_transforms(state$detected_periods)
-      children <- .search_expand(pool, k, expand_top_n, max_depth,
-                                 transforms = transforms,
-                                 cost_budget = cost_budget)
+      children <- .search_expand(pool, k, expand_top_n, max_depth, transforms = transforms, cost_budget = cost_budget)
       for (child in children) {
         # Replay recent history through the child so it joins warm.
         f <- get_skater(child$recipe, state$detected_periods)
@@ -221,7 +280,9 @@ adaptive_search <- function(k = 1L, learning_rate = 0.5,
           child$age <- child$age + 1L
         }
         if (!is.null(child$dists)) {
-          for (h in seq_len(k)) child$queues[[h]] <- list(child$dists[[h]])
+          for (h in seq_len(k)) {
+            child$queues[[h]] <- list(child$dists[[h]])
+          }
         }
         child$warmed <- TRUE
         pool[[length(pool) + 1L]] <- child
@@ -234,10 +295,15 @@ adaptive_search <- function(k = 1L, learning_rate = 0.5,
     for (h in seq_len(k)) {
       log_ws <- vapply(pool, function(e) e$log_w[h], 0.0)
       max_lw <- max(log_ws)
-      weights <- if (is.finite(max_lw)) exp(log_ws - max_lw)
-                 else rep(1.0, length(pool))
+      weights <- if (is.finite(max_lw)) {
+        exp(log_ws - max_lw)
+      } else {
+        rep(1.0, length(pool))
+      }
       d <- dist_combine(lapply(pool, function(e) e$dists[[h]]), weights)
-      if (length(d$w) > max_components) d <- dist_prune(d, max_components)
+      if (length(d$w) > max_components) {
+        d <- dist_prune(d, max_components)
+      }
       combined[[h]] <- d
     }
 
