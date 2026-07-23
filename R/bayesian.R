@@ -15,10 +15,10 @@ bayesian_ensemble <- function(
   n <- length(skaters)
   stopifnot(n > 0, learning_rate > 0, learning_rate <= 1, complexity_penalty >= 0)
   if (is.null(depths)) {
-    depths <- rep(0.0, n)
+    depths <- numeric(n)
   }
   if (is.null(prior_log_weights)) {
-    prior_log_weights <- rep(0.0, n)
+    prior_log_weights <- numeric(n)
   }
   function(y, state = NULL) {
     if (is.null(state)) {

@@ -15,7 +15,7 @@ period_detector <- function(lags = NULL, alpha = 0.01, min_observations = 50L) {
 
   function(y, state = NULL) {
     if (is.null(state)) {
-      state <- list(buffer = numeric(0), n = 0L, mean = 0.0, var = 0.0, cross = rep(0.0, length(lags)))
+      state <- list(buffer = numeric(0), n = 0L, mean = 0.0, var = 0.0, cross = numeric(length(lags)))
     }
     state$buffer <- c(state$buffer, y)
     state$n <- state$n + 1L
@@ -42,7 +42,7 @@ period_detector <- function(lags = NULL, alpha = 0.01, min_observations = 50L) {
       return(list(scores = list(), state = state))
     }
     keep <- which(state$n > lags)
-    acf <- if (state$var > 0) state$cross[keep] / state$var else rep(0.0, length(keep))
+    acf <- if (state$var > 0) state$cross[keep] / state$var else numeric(length(keep))
     ord <- order(-abs(acf), method = "radix") # stable: ties keep lag order
     scores <- lapply(ord, function(j) c(lags[keep[j]], acf[j]))
     list(scores = scores, state = state)

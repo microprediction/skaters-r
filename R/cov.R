@@ -7,7 +7,7 @@
 running_cov <- function(y, state = NULL) {
   n <- length(y)
   if (is.null(state)) {
-    state <- list(n = 0L, mean = rep(0.0, n), C = rep(0.0, n * n))
+    state <- list(n = 0L, mean = numeric(n), C = numeric(n * n))
   }
   state$n <- state$n + 1L
   k <- state$n
@@ -16,15 +16,15 @@ running_cov <- function(y, state = NULL) {
   delta2 <- y - state$mean
   # C += delta %o% delta2, flat row-major: index (i,j) -> (i-1)*n + j
   state$C <- state$C + as.vector(t(outer(delta, delta2)))
-  cov <- if (k < 2) rep(0.0, n * n) else state$C / (k - 1)
+  cov <- if (k < 2) numeric(n * n) else state$C / (k - 1)
   list(mean = state$mean, cov = cov, state = state)
 }
 
 ema_cov <- function(y, state = NULL, alpha = 0.05) {
   n <- length(y)
   if (is.null(state)) {
-    state <- list(mean = as.numeric(y), cov = rep(0.0, n * n), n = 1L)
-    return(list(mean = as.numeric(y), cov = rep(0.0, n * n), state = state))
+    state <- list(mean = as.numeric(y), cov = numeric(n * n), n = 1L)
+    return(list(mean = as.numeric(y), cov = numeric(n * n), state = state))
   }
   state$n <- state$n + 1L
   delta <- y - state$mean
@@ -36,10 +36,10 @@ ema_cov <- function(y, state = NULL, alpha = 0.05) {
 ledoit_wolf_cov <- function(y, state = NULL, alpha = 0.05, shrinkage = 0.5) {
   n <- length(y)
   if (is.null(state)) {
-    corr <- rep(0.0, n * n)
+    corr <- numeric(n * n)
     corr[seq(1L, n * n, by = n + 1L)] <- 1.0
-    state <- list(mean = as.numeric(y), var = rep(0.0, n), corr = corr, n = 1L)
-    return(list(mean = as.numeric(y), cov = rep(0.0, n * n), state = state))
+    state <- list(mean = as.numeric(y), var = numeric(n), corr = corr, n = 1L)
+    return(list(mean = as.numeric(y), cov = numeric(n * n), state = state))
   }
   state$n <- state$n + 1L
   delta <- y - state$mean
@@ -65,7 +65,7 @@ ledoit_wolf_cov <- function(y, state = NULL, alpha = 0.05, shrinkage = 0.5) {
   state$corr <- corr
 
   # Shrink correlation toward identity and reconstitute the covariance.
-  shrunk <- rep(0.0, n * n)
+  shrunk <- numeric(n * n)
   for (i in seq_len(n)) {
     for (j in seq_len(n)) {
       idx <- (i - 1L) * n + j

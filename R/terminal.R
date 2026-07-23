@@ -20,9 +20,9 @@ terminal_leaf_ensemble <- function(
   n <- length(skaters)
   stopifnot(n > 0)
   if (is.null(depths)) {
-    depths <- rep(0.0, n)
+    depths <- numeric(n)
   }
-  prior <- if (is.null(prior_log_weights)) rep(0.0, n) else prior_log_weights
+  prior <- if (is.null(prior_log_weights)) numeric(n) else prior_log_weights
   # One terminal leaf per horizon; closures live here, never in state.
   tleafs <- lapply(seq_len(k), function(h) leaf_fn(k = 1L))
 

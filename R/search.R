@@ -62,7 +62,7 @@
     cost = cost,
     age = 0L,
     warmed = FALSE,
-    log_w = rep(0.0, k),
+    log_w = numeric(k),
     queues = rep(list(list()), k),
     dists = NULL
   )

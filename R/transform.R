@@ -418,7 +418,7 @@ ar <- function(order = 2L, lam = 0.99, ridge = 1.0, decay = 0.0) {
   }
   forward <- function(y, tstate = NULL) {
     if (is.null(tstate)) {
-      tstate <- list(buffer = numeric(0), phi = rep(0.0, p), P = init_P(), n = 0)
+      tstate <- list(buffer = numeric(0), phi = numeric(p), P = init_P(), n = 0)
     }
     st <- tstate
     st$n <- st$n + 1
@@ -518,7 +518,7 @@ grouped_ar <- function(max_lag = 16L, lam = 0.99, ridge = 1.0) {
   }
   forward <- function(y, tstate = NULL) {
     if (is.null(tstate)) {
-      tstate <- list(buffer = numeric(0), theta = rep(0.0, n_groups), P = init_P(), n = 0)
+      tstate <- list(buffer = numeric(0), theta = numeric(n_groups), P = init_P(), n = 0)
     }
     st <- tstate
     st$n <- st$n + 1

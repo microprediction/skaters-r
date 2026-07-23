@@ -49,7 +49,7 @@ scale_mixture_leaf <- function(k = 1L, gamma = 0.02, scale_alpha = 0.01, scales 
       g <- if (gamma > 1.0 / state$n) gamma else 1.0 / state$n
       state$w <- (1 - g) * w + g * dens / total
     }
-    d <- dist_new(state$w, rep(0.0, K), C * sigma)
+    d <- dist_new(state$w, numeric(K), C * sigma)
     list(dists = rep(list(d), k), state = state)
   }
 }
@@ -118,7 +118,7 @@ crps_leaf <- function(k = 1L, eta = 1.0, scale_alpha = 0.01, scales = .FINE) {
       Z <- sum(nw)
     }
     state$w <- nw / Z
-    d <- dist_new(state$w, rep(0.0, K), C * sig)
+    d <- dist_new(state$w, numeric(K), C * sig)
     list(dists = rep(list(d), k), state = state)
   }
 }
@@ -225,7 +225,7 @@ garch_leaf <- function(k = 1L, gamma = 0.02, refit_every = 40L, min_obs = 80L, w
       g <- if (gamma > 1.0 / s$n) gamma else 1.0 / s$n
       s$w <- (1 - g) * w + g * dens / total
     }
-    d <- dist_new(s$w, rep(0.0, K), C * sigma)
+    d <- dist_new(s$w, numeric(K), C * sigma)
     list(dists = rep(list(d), k), state = s)
   }
 }
