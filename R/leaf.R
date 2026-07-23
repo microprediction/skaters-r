@@ -37,7 +37,7 @@ scale_mixture_leaf <- function(k = 1L, gamma = 0.02, scale_alpha = 0.01, scales 
       state <- list(v = 0.0, w = w, n = 0L)
     }
     state$n <- state$n + 1L
-    a <- if (scale_alpha > 1.0 / state$n) scale_alpha else 1.0 / state$n
+    a <- max(scale_alpha, 1.0 / state$n)
     state$v <- (1 - a) * state$v + a * y * y
     v <- state$v
     sigma <- if (is.finite(v) && v > 0) sqrt(v) else max(abs(y), 1e-8)
@@ -46,7 +46,7 @@ scale_mixture_leaf <- function(k = 1L, gamma = 0.02, scale_alpha = 0.01, scales 
     dens <- w * exp(-0.5 * z * z / (C * C)) / C
     total <- sum(dens)
     if (total > 0) {
-      g <- if (gamma > 1.0 / state$n) gamma else 1.0 / state$n
+      g <- max(gamma, 1.0 / state$n)
       state$w <- (1 - g) * w + g * dens / total
     }
     d <- dist_new(state$w, numeric(K), C * sigma)
@@ -102,7 +102,7 @@ crps_leaf <- function(k = 1L, eta = 1.0, scale_alpha = 0.01, scales = .FINE) {
       state <- list(v = 0.0, w = w, n = 0L)
     }
     state$n <- state$n + 1L
-    a <- if (scale_alpha > 1.0 / state$n) scale_alpha else 1.0 / state$n
+    a <- max(scale_alpha, 1.0 / state$n)
     state$v <- (1 - a) * state$v + a * y * y
     sig <- if (is.finite(state$v) && state$v > 0) sqrt(state$v) else max(abs(y), 1e-8)
     z <- y / sig
@@ -158,7 +158,7 @@ garch_leaf <- function(k = 1L, gamma = 0.02, refit_every = 40L, min_obs = 80L, w
     }
     s <- state
     s$n <- s$n + 1L
-    a0 <- if (0.02 > 1.0 / s$n) 0.02 else 1.0 / s$n
+    a0 <- max(0.02, 1.0 / s$n)
     s$s2 <- (1 - a0) * s$s2 + a0 * y * y
     if (s$s2 <= 0) {
       s$s2 <- max(y * y, 1e-12)
@@ -190,7 +190,7 @@ garch_leaf <- function(k = 1L, gamma = 0.02, refit_every = 40L, min_obs = 80L, w
             }
             base <- (1.0 - al - be) * s2
             for (cc in .GARCH_OMEGA_MULT) {
-              om <- if (base * cc > 1e-12) base * cc else 1e-12
+              om <- max(base * cc, 1e-12)
               hh <- om / (1.0 - al - be)
               v <- 0.0
               for (r in resid) {
@@ -222,7 +222,7 @@ garch_leaf <- function(k = 1L, gamma = 0.02, refit_every = 40L, min_obs = 80L, w
     dens <- w * exp(-0.5 * z * z / (C * C)) / C
     total <- sum(dens)
     if (total > 0) {
-      g <- if (gamma > 1.0 / s$n) gamma else 1.0 / s$n
+      g <- max(gamma, 1.0 / s$n)
       s$w <- (1 - g) * w + g * dens / total
     }
     d <- dist_new(s$w, numeric(K), C * sigma)
