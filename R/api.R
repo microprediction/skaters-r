@@ -179,14 +179,15 @@ build_candidates <- function(k, leaf_fn = leaf) {
 # lattice projection, multi-scale at k > 1, GPD tail splice, parade wrapper.
 laplace <- function(
   k = 1L,
-  objective = "crps",
+  objective = c("crps", "likelihood"),
   sticky = TRUE,
   leaf = NULL,
   scales = NULL,
   scale_alpha = 0.03,
-  tails = "gpd"
+  tails = c("gpd", "gaussian")
 ) {
-  stopifnot(tails %in% c("gpd", "gaussian"))
+  objective <- match.arg(objective)
+  tails <- match.arg(tails)
   use_sticky <- sticky
   leaf_arg <- leaf
   f <- multiscale(
