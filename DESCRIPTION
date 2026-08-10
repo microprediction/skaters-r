@@ -1,6 +1,6 @@
 Package: skaters
 Title: Online Distributional Time-Series Forecasting by Conjugation
-Version: 0.0.1
+Version: 0.1.0
 Authors@R: 
     person("Peter", "Cotton", , "peter.cotton@microprediction.com", role = c("aut", "cre"))
 Description: Port of the Python 'skaters' package: an online, univariate,

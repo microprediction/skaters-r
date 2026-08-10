@@ -50,10 +50,23 @@ standardize <- function(alpha = 0.05, eps = 1e-8) {
     mu <- tstate$mu
     v <- tstate$var
     diff <- y - mu
+    # Emit against the PRIOR state, so the forward map is the affine change of
+    # coordinates z = (y - mu) / sigma that the inverse applies. Scaling by the
+    # post-update std makes the emission self-normalized (bounded by
+    # 1/sqrt(alpha)) and the affine inverse is then not its inverse.
+    # Cold start: before the variance is informative, scale by the first
+    # nonzero residual, so the first informative emission is +-1.
+    sigma <- if (v > eps * eps) {
+      sqrt(v)
+    } else if (abs(diff) > eps) {
+      abs(diff)
+    } else {
+      eps
+    }
+    y_prime <- diff / sigma
     mu_new <- mu + alpha * diff
-    v <- (1 - alpha) * v + alpha * diff * diff
-    sigma <- if (v > eps * eps) sqrt(v) else eps
-    list(y = diff / sigma, state = list(mu = mu_new, var = v))
+    v_new <- (1 - alpha) * v + alpha * diff * diff
+    list(y = y_prime, state = list(mu = mu_new, var = v_new))
   }
   inverse_k <- function(dists, tstate) {
     sigma <- if (tstate$var > 1e-16) sqrt(tstate$var) else 1e-8
@@ -192,22 +205,35 @@ holt_linear <- function(alpha = 0.1, beta = 0.05) {
   list(forward = forward, inverse_k = inverse_k)
 }
 
-garch <- function(omega = 0.01, alpha = 0.1, beta = 0.85, eps = 1e-8) {
+garch <- function(omega = 0.01, alpha = 0.1, beta = 0.85, mean_alpha = 0.05,
+                  eps = 1e-8) {
   stopifnot(omega > 0, alpha >= 0, beta >= 0)
   force(eps)
+  force(mean_alpha)
   forward <- function(y, tstate = NULL) {
     if (is.null(tstate)) {
       persist <- alpha + beta
       var0 <- if (persist < 1) omega / (1 - persist) else omega / eps
-      return(list(y = y / max(sqrt(var0), eps), state = list(var = var0, last_y = y)))
+      return(list(y = 0.0, state = list(var = var0, last_dev = 0.0, mu = y)))
     }
-    v <- omega + alpha * tstate$last_y^2 + beta * tstate$var
+    # GARCH conditional variance of the DEVIATION from a running mean, not of
+    # the raw value. alpha * y^2 treats y as a mean-zero return; on a level
+    # series that makes the "volatility" of order |y|, and the inverse then
+    # re-inflates it -- unstable, and it widened real level-series forecasts.
+    # Tracking a mean (like `standardize`) makes garch shift-invariant. On the
+    # mean-zero returns garch is meant for, mu stays ~0 and this reduces to the
+    # original y/sigma exactly.
+    mu <- tstate$mu
+    dev <- y - mu
+    v <- omega + alpha * tstate$last_dev^2 + beta * tstate$var
     sigma <- if (v > eps * eps) sqrt(v) else eps
-    list(y = y / sigma, state = list(var = v, last_y = y))
+    y_prime <- dev / sigma
+    mu_new <- mu + mean_alpha * dev
+    list(y = y_prime, state = list(var = v, last_dev = dev, mu = mu_new))
   }
   inverse_k <- function(dists, tstate) {
     sigma <- if (tstate$var > 1e-16) sqrt(tstate$var) else 1e-8
-    lapply(dists, dist_scale, factor = sigma)
+    lapply(dists, dist_affine, a = sigma, b = tstate$mu)
   }
   list(forward = forward, inverse_k = inverse_k)
 }
@@ -249,6 +275,86 @@ seasonal_difference <- function(period = 12L) {
         dist_new(d$w, d$m + anchor_mean, sqrt(d$s * d$s + anchor_var))
       } else {
         dist_shift(d, anchor_mean)
+      }
+    }
+    out
+  }
+  list(forward = forward, inverse_k = inverse_k)
+}
+
+# Residual from a hedged seasonal anchor.
+#
+# Forward:   y'_t = y_t - a_t,  a_t = weight * phaseEMA_{p(t)} + (1-weight) * y_{t-s}
+# Inverse:   shift each horizon's Dist by its anchor; for h >= s the naive
+#            component is a value recovered earlier in the same call and its
+#            variance is convolved in (as in seasonal_difference).
+#
+# The phase-EMA is a recency-weighted mean of same-phase values (memory ~1/alpha
+# cycles); the seasonal-naive is the single value one period ago. The naive alone
+# adapts instantly but is one noisy draw; the phase-EMA averages the noise but
+# lags level shifts. The blend beats either alone on seasonal series.
+# weight = 0 recovers seasonal_difference.
+#
+# Forecasting from same-phase component series follows Viole's NNS package
+# (NNS.ARMA, CRAN, since 2017).
+seasonal_anchor <- function(period, alpha = 0.2, weight = 0.5) {
+  stopifnot(period >= 1, alpha > 0, alpha < 1, weight >= 0, weight <= 1)
+  force(alpha)
+  force(weight)
+  anchor_of <- function(ema_p, snaive) {
+    if (is.null(ema_p)) snaive else weight * ema_p + (1.0 - weight) * snaive
+  }
+  forward <- function(y, tstate = NULL) {
+    if (is.null(tstate)) {
+      return(list(y = 0.0, state = list(ema = vector("list", period),
+                                        buffer = c(y), n = 1)))
+    }
+    st <- tstate
+    buf <- st$buffer
+    p <- st$n %% period # 0-based phase, as in Python
+    snaive <- if (length(buf) >= period) buf[length(buf) - period + 1] else buf[length(buf)]
+    y_prime <- y - anchor_of(st$ema[[p + 1]], snaive)
+    e <- st$ema[[p + 1]]
+    st$ema[[p + 1]] <- if (is.null(e)) y else e + alpha * (y - e)
+    buf <- c(buf, y)
+    if (length(buf) > 2 * period) {
+      buf <- buf[-1]
+    }
+    st$buffer <- buf
+    st$n <- st$n + 1
+    list(y = y_prime, state = st)
+  }
+  inverse_k <- function(dists, tstate) {
+    buf <- tstate$buffer
+    k <- length(dists)
+    recovered_means <- numeric(k)
+    recovered_vars <- numeric(k)
+    out <- vector("list", k)
+    for (h in seq_len(k)) {
+      hh <- h - 1 # 0-based horizon
+      p <- (tstate$n + hh) %% period
+      lag_idx <- hh - period
+      if (lag_idx < 0) {
+        buf_idx <- length(buf) - period + hh + 1 # 1-based
+        snaive <- if (buf_idx >= 1 && buf_idx <= length(buf)) {
+          buf[buf_idx]
+        } else {
+          buf[length(buf)]
+        }
+        snaive_var <- 0.0
+      } else {
+        snaive <- recovered_means[lag_idx + 1]
+        snaive_var <- recovered_vars[lag_idx + 1]
+      }
+      a_mean <- anchor_of(tstate$ema[[p + 1]], snaive)
+      a_var <- ((1.0 - weight)^2) * snaive_var
+      d <- dists[[h]]
+      recovered_means[h] <- dist_mean(d) + a_mean
+      recovered_vars[h] <- dist_var(d) + a_var
+      out[[h]] <- if (a_var > 0.0) {
+        dist_new(d$w, d$m + a_mean, sqrt(d$s * d$s + a_var))
+      } else {
+        dist_shift(d, a_mean)
       }
     }
     out
@@ -405,6 +511,57 @@ fractional_difference <- function(d = 0.4, window = 50L) {
   out
 }
 
+# Spectral radius of the AR companion matrix (largest |characteristic root|).
+# The h-step AR forecast is governed by powers of this matrix: it converges
+# (a well-posed forecast) iff the radius is < 1, and diverges geometrically
+# otherwise. Closed form for p <= 2; power iteration for higher orders.
+# Port of _ar_spectral_radius in transform.py -- the 60 fixed iterations and
+# the "or 1.0" zero-guard are load-bearing for 1e-6 parity.
+.ar_spectral_radius <- function(phi) {
+  p <- length(phi)
+  if (p == 1) {
+    return(abs(phi[1]))
+  }
+  if (p == 2) {
+    a <- phi[1]
+    b <- phi[2]
+    disc <- a * a + 4.0 * b
+    if (disc >= 0.0) {
+      r <- sqrt(disc)
+      return(max(abs((a + r) / 2.0), abs((a - r) / 2.0)))
+    }
+    return(sqrt((a / 2.0)^2 + (sqrt(-disc) / 2.0)^2)) # |complex root|
+  }
+  v <- rep(1.0, p)
+  rho <- 0.0
+  for (.i in seq_len(60)) {
+    nv <- c(sum(phi * v), v[-p])
+    m <- max(abs(nv))
+    if (m == 0) m <- 1.0
+    v <- nv / m
+    rho <- m
+  }
+  rho
+}
+
+# Damp AR coefficients into the stationary region for forecasting.
+#
+# An online least-squares fit -- especially from a handful of warm-up points --
+# can land outside the stationary region (a near-unit or explosive root). Its
+# multi-step forecast then diverges (an AR(2) fit to 3 points reached a 13-step
+# mean of ~1e22 on real GIFT-Eval series). Scaling phi_j by gamma^(j+1) scales
+# every companion eigenvalue by gamma, so gamma = margin / rho brings the radius
+# to margin and leaves an already-stationary fit untouched. Constrained
+# forecasting, not a magnitude clip.
+.ar_stationary <- function(phi, margin = 0.999) {
+  rho <- .ar_spectral_radius(phi)
+  if (rho <= margin) {
+    return(phi)
+  }
+  g <- margin / rho
+  phi * g^(seq_along(phi))
+}
+
 ar <- function(order = 2L, lam = 0.99, ridge = 1.0, decay = 0.0) {
   stopifnot(order >= 1, lam > 0, lam <= 1, decay >= 0)
   force(ridge)
@@ -451,14 +608,29 @@ ar <- function(order = 2L, lam = 0.99, ridge = 1.0, decay = 0.0) {
   }
   inverse_k <- function(dists, tstate) {
     buf <- tstate$buffer
-    phi <- tstate$phi
+    # Constrain to stationarity: an online fit from few warm-up points can land
+    # on an explosive root whose multi-step forecast diverges.
+    phi <- .ar_stationary(tstate$phi)
     k <- length(dists)
+    # Impulse responses psi_0..psi_{k-1}: psi_0 = 1, psi_i = sum_j phi_j psi_{i-j}.
+    # The h-step variance is sigma^2 * sum_{i<=h} psi_i^2, NOT a recursion on the
+    # recovered variances -- successive horizons share the same innovation, so
+    # summing phi_j^2 * var_{h-j} both mis-weights it and double counts.
+    psi <- numeric(k)
+    psi[1] <- 1.0
+    for (i in seq_len(k - 1)) {
+      s <- 0.0
+      for (j in seq_len(p)) {
+        idx <- i - j # 0-based psi index
+        if (idx >= 0) s <- s + phi[j] * psi[idx + 1]
+      }
+      psi[i + 1] <- s
+    }
     recovered_means <- numeric(k)
-    recovered_vars <- numeric(k)
     out <- vector("list", k)
+    cum_psi2 <- 0.0
     for (h in seq_len(k)) {
       ar_mean <- 0.0
-      ar_var <- 0.0
       for (j in seq_len(p)) {
         lag_h <- (h - 1) - j # 0-based previous horizon index
         if (lag_h < 0) {
@@ -468,15 +640,14 @@ ar <- function(order = 2L, lam = 0.99, ridge = 1.0, decay = 0.0) {
           }
         } else if (lag_h < h - 1) {
           ar_mean <- ar_mean + phi[j] * recovered_means[lag_h + 1]
-          ar_var <- ar_var + phi[j]^2 * recovered_vars[lag_h + 1]
         }
       }
       d <- dists[[h]]
       total_mean <- dist_mean(d) + ar_mean
-      total_var <- dist_var(d) + ar_var
+      cum_psi2 <- cum_psi2 + psi[h] * psi[h]
+      total_var <- cum_psi2 * dist_var(d)
       total_std <- if (total_var > 0) sqrt(total_var) else max(dist_std(d), 1e-12)
       recovered_means[h] <- total_mean
-      recovered_vars[h] <- total_var
       out[[h]] <- dist_gaussian(total_mean, total_std)
     }
     out
@@ -551,14 +722,27 @@ grouped_ar <- function(max_lag = 16L, lam = 0.99, ridge = 1.0) {
   }
   inverse_k <- function(dists, tstate) {
     buf <- tstate$buffer
-    phi <- tstate$theta[groups]
+    # Expand group coefficients to per-lag, then constrain to stationarity for a
+    # well-posed forecast (same as ar(); grouped AR is AR-family).
+    phi <- .ar_stationary(tstate$theta[groups])
     k <- length(dists)
+    # Impulse responses, as in ar(): the h-step variance is
+    # sigma^2 * sum_{i<=h} psi_i^2, not a recursion on recovered variances.
+    psi <- numeric(k)
+    psi[1] <- 1.0
+    for (i in seq_len(k - 1)) {
+      s <- 0.0
+      for (j in seq_len(max_lag)) {
+        idx <- i - j
+        if (idx >= 0) s <- s + phi[j] * psi[idx + 1]
+      }
+      psi[i + 1] <- s
+    }
     recovered_means <- numeric(k)
-    recovered_vars <- numeric(k)
     out <- vector("list", k)
+    cum_psi2 <- 0.0
     for (h in seq_len(k)) {
       ar_mean <- 0.0
-      ar_var <- 0.0
       for (j in seq_len(max_lag)) {
         lag_h <- (h - 1) - j
         if (lag_h < 0) {
@@ -568,15 +752,14 @@ grouped_ar <- function(max_lag = 16L, lam = 0.99, ridge = 1.0) {
           }
         } else if (lag_h < h - 1) {
           ar_mean <- ar_mean + phi[j] * recovered_means[lag_h + 1]
-          ar_var <- ar_var + phi[j]^2 * recovered_vars[lag_h + 1]
         }
       }
       d <- dists[[h]]
       total_mean <- dist_mean(d) + ar_mean
-      total_var <- dist_var(d) + ar_var
+      cum_psi2 <- cum_psi2 + psi[h] * psi[h]
+      total_var <- cum_psi2 * dist_var(d)
       total_std <- if (total_var > 0) sqrt(total_var) else max(dist_std(d), 1e-12)
       recovered_means[h] <- total_mean
-      recovered_vars[h] <- total_var
       out[[h]] <- dist_gaussian(total_mean, total_std)
     }
     out
