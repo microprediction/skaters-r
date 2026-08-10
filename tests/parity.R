@@ -95,6 +95,10 @@ check_block <- function(scenarios, series, expected_block) {
     expected <- expected_block[[name]]$out
     st <- NULL
     row <- 0L
+    # Per-scenario tally. Without it the summary line below printed "ok" for
+    # EVERY scenario, failing or not, so a drifted port looked clean apart from
+    # whichever scenario happened to consume the global 7-line print budget.
+    sc_fails <- 0L
     for (i in seq_along(series)) {
       r <- sc$sk(series[i], st)
       st <- r$state
@@ -111,7 +115,10 @@ check_block <- function(scenarios, series, expected_block) {
             }
             if (abs(got[j] - exp_[j]) > ATOL + RTOL * abs(exp_[j])) {
               fails <<- fails + 1L
-              if (fails < 8) {
+              sc_fails <- sc_fails + 1L
+              # Budget per SCENARIO, not globally, so every drifted scenario
+              # shows evidence instead of only the first one.
+              if (sc_fails <= 3) {
                 cat(sprintf("FAIL %s row %d h %d probe %d: got %.9g want %.9g\n", name, row, h, j, got[j], exp_[j]))
               }
             }
@@ -119,7 +126,11 @@ check_block <- function(scenarios, series, expected_block) {
         }
       }
     }
-    cat(sprintf("ok   %-9s\n", name))
+    if (sc_fails > 0) {
+      cat(sprintf("FAIL %-16s %d mismatches\n", name, sc_fails))
+    } else {
+      cat(sprintf("ok   %-16s\n", name))
+    }
   }
 }
 check_block(scenarios, series, v$scenarios)
@@ -202,6 +213,36 @@ for (nm in names(cov_fns)) {
     }
   }
   cat(sprintf("ok   cov_%s\n", nm))
+}
+
+# --- structure: the candidate population, not its numbers ---
+# Numeric probes cannot see a missing candidate. This port sat at 57 candidates
+# against the reference's 60 (no seasonal_anchor) while every individual
+# transform matched to 1e-6; only the composed laplace drifted. Count and depth
+# histogram catch that in one line, and catch a candidate added in the wrong
+# position too, since the ensemble aligns depths by index.
+if (!is.null(v$structure)) {
+  for (kname in names(v$structure)) {
+    kk <- as.integer(kname)
+    want <- v$structure[[kname]]
+    cd <- build_candidates(kk)
+    got_n <- length(cd$candidates)
+    want_n <- as.integer(want$n_candidates)
+    if (got_n != want_n) {
+      fails <- fails + 1L
+      cat(sprintf("FAIL structure k=%d: %d candidates, want %d\n", kk, got_n, want_n))
+    }
+    got_d <- as.integer(cd$depths)
+    want_d <- as.integer(unlist(want$depths))
+    if (length(got_d) != length(want_d) || any(got_d != want_d)) {
+      fails <- fails + 1L
+      cat(sprintf("FAIL structure k=%d: depth vector differs (got %s want %s)\n", kk,
+                  paste(table(got_d), collapse = "/"), paste(table(want_d), collapse = "/")))
+    }
+    if (got_n == want_n && length(got_d) == length(want_d) && all(got_d == want_d)) {
+      cat(sprintf("ok   structure k=%d   %d candidates\n", kk, got_n))
+    }
+  }
 }
 
 cat(sprintf("%d values checked\n", checked))
