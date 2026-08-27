@@ -1,0 +1,18 @@
+\name{predict.skater}
+\alias{predict.skater}
+\title{Forecast intervals from a skater}
+\usage{
+\method{predict}{skater}(object, level = c(80, 95), ...)
+}
+\arguments{
+\item{object}{a \code{"skater"} object that has seen at least one observation.}
+\item{level}{vector of central interval levels in percent.}
+\item{...}{unused.}
+}
+\value{a \code{data.frame} with columns \code{h}, \code{mean}, and
+\code{lo}/\code{hi} pairs per level.}
+\description{
+One row per horizon with the predictive mean and central intervals. Quantiles
+are exact inversions of the predictive mixture, so an 80\% interval is the 0.1
+and 0.9 quantiles, with no normality assumption.
+}

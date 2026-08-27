@@ -12,5 +12,7 @@ License: MIT + file LICENSE
 Depends:
     R (>= 3.6.0)
 Suggests:
-    jsonlite
+    jsonlite,
+    testthat,
+    forecast
 Encoding: UTF-8
