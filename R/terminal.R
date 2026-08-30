@@ -1,6 +1,11 @@
 # Terminal-leaf ensemble: mix for the mean, model the residual once.
 # Port of skaters/terminal.py.
 
+#' @param leaf_fn leaf factory fitted to the ensemble's residual stream,
+#'   e.g. [crps_leaf()].
+#' @param forget per-step decay applied to accumulated member weights.
+#' @rdname ensembles
+#' @export
 terminal_leaf_ensemble <- function(
   skaters,
   leaf_fn = crps_leaf,

@@ -1,6 +1,21 @@
 # Precision-weighted ensemble of skaters.
 # Port of skaters/ensemble.py.
 
+#' Skater ensembles
+#'
+#' `precision_weighted_ensemble` weights members by inverse mean-squared
+#' error; `bayesian_ensemble` by exponentiated log-likelihood with a
+#' complexity penalty; `terminal_leaf_ensemble` adds a terminal leaf fitted
+#' to the ensemble's own residuals (the trunk of [laplace()]). Ports of
+#' `skaters/ensemble.py`, `bayesian.py`, and `terminal.py`.
+#'
+#' @param skaters list of member skaters, each `function(y, state)`.
+#' @param k forecast horizon in steps.
+#' @param floor lower bound on any member's weight.
+#' @return a skater: a function `f(y, state)` returning `list(dists, state)`
+#'   whose predictive is the weighted mixture of the members'.
+#' @rdname ensembles
+#' @export
 precision_weighted_ensemble <- function(skaters, k = 1L, floor = 1e-6) {
   force(k)
   force(floor)

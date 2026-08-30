@@ -14,6 +14,11 @@
 
 # Generate the full candidate population (shared by all policies).
 # Returns list(candidates=..., depths=...). Order mirrors api.py exactly.
+#' @param leaf_fn leaf factory used for every candidate, e.g. [leaf()].
+#' @return `build_candidates` returns `list(candidates, depths)`: the
+#'   candidate skaters and their tree depths, in the reference order.
+#' @rdname laplace
+#' @export
 build_candidates <- function(k, leaf_fn = leaf) {
   force(k)
   force(leaf_fn)
@@ -188,6 +193,40 @@ build_candidates <- function(k, leaf_fn = leaf) {
 
 # The general forecaster: likelihood-weighted trunk, CRPS terminal leaf,
 # lattice projection, multi-scale at k > 1, GPD tail splice, parade wrapper.
+#' laplace: the general forecaster
+#'
+#' The deployed default: a likelihood-weighted trunk over the candidate
+#' population from [build_candidates()], a CRPS terminal leaf, the lattice
+#' projection, multi-scale at `k > 1`, the GPD tail splice, and the parade
+#' wrapper. Call as `f <- laplace(k)`, then feed each observation with
+#' `f(y, state)`; the returned `dists` holds one mixture per horizon.
+#' Port of `skaters/api.py`.
+#'
+#' @param k forecast horizon in steps.
+#' @param objective trunk weighting objective: `"crps"` or `"likelihood"`.
+#' @param sticky whether to wrap in the lattice projection for repeat-heavy
+#'   series (see [sticky()]).
+#' @param leaf leaf factory for the candidate population; the default
+#'   follows `objective`.
+#' @param scales scale basis passed to the leaf factories; `NULL` for the
+#'   objective's default.
+#' @param scale_alpha adaptation rate of the leaf scale weights.
+#' @param tails `"gpd"` to splice generalized-Pareto tails onto the
+#'   predictive (see [gpdtails()]), `"gaussian"` for none.
+#' @return a skater: a function `f(y, state)` returning `list(dists, state)`
+#'   with one predictive mixture per horizon; `state$pit` and `state$z`
+#'   carry the parade's calibration diagnostics (see [parade()]).
+#' @examples
+#' f <- laplace(k = 1)
+#' st <- NULL
+#' for (y in c(0.4, -0.2, 0.1, 0.6, -0.3, 0.2)) {
+#'   r <- f(y, st)
+#'   st <- r$state
+#' }
+#' dist_mean(r$dists[[1]])
+#' dist_quantile(r$dists[[1]], 0.95)
+#' @rdname laplace
+#' @export
 laplace <- function(
   k = 1L,
   objective = c("crps", "likelihood"),

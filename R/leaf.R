@@ -1,6 +1,19 @@
 # Centered Gaussian residual leaf (Welford online variance).
 # Port of skaters/leaf.py::leaf.
 
+#' Leaf skaters: residual noise models
+#'
+#' The terminal noise models of the transform tree. `leaf` is the
+#' running-moments Gaussian; `scale_mixture_leaf` learns a mixture over a
+#' scale basis by likelihood; `crps_leaf` learns it by CRPS; `garch_leaf`
+#' refits a GARCH(1,1) window. Each returns a skater `function(y, state)`
+#' yielding `list(dists, state)`. Port of `skaters/leaf.py`.
+#'
+#' @param k forecast horizon in steps.
+#' @return a skater: a function `f(y, state)` returning `list(dists, state)`
+#'   with one predictive mixture per horizon (see [dist_new()]).
+#' @rdname leaf
+#' @export
 leaf <- function(k = 1L) {
   force(k)
   function(y, state = NULL) {
@@ -23,6 +36,12 @@ leaf <- function(k = 1L) {
 
 # Residual model as a fixed Gaussian scale mixture, weights fit online
 # by recency-weighted likelihood EM. Port of leaf.py::scale_mixture_leaf.
+#' @param gamma per-step decay of the scale weights.
+#' @param scale_alpha adaptation rate of the base standard deviation.
+#' @param scales numeric vector of standard-deviation multipliers forming
+#'   the scale basis.
+#' @rdname leaf
+#' @export
 scale_mixture_leaf <- function(k = 1L, gamma = 0.02, scale_alpha = 0.01, scales = .SCALE_BASIS) {
   force(k)
   force(gamma)
@@ -87,6 +106,9 @@ scale_mixture_leaf <- function(k = 1L, gamma = 0.02, scale_alpha = 0.01, scales 
 
 # Scale-mixture leaf with weights fit by online CRPS exponentiated gradient.
 # Port of leaf.py::crps_leaf.
+#' @param eta learning rate of the CRPS weight update.
+#' @rdname leaf
+#' @export
 crps_leaf <- function(k = 1L, eta = 1.0, scale_alpha = 0.01, scales = .FINE) {
   force(k)
   force(eta)
@@ -131,6 +153,11 @@ crps_leaf <- function(k = 1L, eta = 1.0, scale_alpha = 0.01, scales = .FINE) {
 
 # Terminal leaf with GARCH(1,1) conditional variance and scale-mixture tails.
 # Port of leaf.py::garch_leaf (variance-targeted QMLE grid refit).
+#' @param refit_every observations between GARCH refits.
+#' @param min_obs observations required before the first refit.
+#' @param window observations retained for refitting.
+#' @rdname leaf
+#' @export
 garch_leaf <- function(k = 1L, gamma = 0.02, refit_every = 40L, min_obs = 80L, window = 400L, scales = .SCALE_BASIS) {
   force(k)
   force(gamma)

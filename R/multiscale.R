@@ -1,6 +1,20 @@
 # Multi-scale ensemble: combine forecasters running on decimated clocks.
 # Port of skaters/multiscale.py.
 
+#' Multi-scale composition
+#'
+#' Runs a skater factory on several decimated clocks and blends the
+#' horizons, so slow structure is forecast on a slow clock. Port of
+#' `skaters/multiscale.py`.
+#'
+#' @param base skater factory `function(k)` run once per clock.
+#' @param k forecast horizon in steps on the fastest clock.
+#' @param scales integer decimation factors; defaults to
+#'   `c(1, ceiling(sqrt(k)), k)`.
+#' @param forget per-step decay of the per-scale blend weights.
+#' @param max_components component budget for the blended mixture.
+#' @return a skater: a function `f(y, state)` returning `list(dists, state)`.
+#' @export
 multiscale <- function(base, k, scales = NULL, forget = 0.99, max_components = 20L) {
   force(base)
   force(forget)
