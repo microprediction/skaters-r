@@ -6,9 +6,11 @@
 #' The transform grammar: each factory returns a forward/inverse pair that
 #' [conjugate()] wraps around an inner skater, so the inner skater models
 #' the transformed residual and predictions are mapped back. Port of
-#' `skaters/transform.py`, parity-checked at 1e-6. Note `ar` masks
-#' `stats::ar`, and `garch` here is the variance-tracking transform, not a
-#' fitter.
+#' `skaters/transform.py`, parity-checked at 1e-6. The reference spells the
+#' autoregressive transform `ar`; it is exported here as `ar_transform`
+#' (matching `ema_transform` and `ou_transform`) so attaching the package
+#' does not mask `stats::ar`. Note `garch` here is the variance-tracking
+#' transform, not a fitter.
 #'
 #' `seasonal_difference` subtracts the value one period ago;
 #' `seasonal_anchor` subtracts a hedge between that seasonal-naive value and
@@ -636,7 +638,7 @@ fractional_difference <- function(d = 0.4, window = 50L) {
 #' @param decay per-step decay of the fitted coefficients toward zero.
 #' @rdname transforms
 #' @export
-ar <- function(order = 2L, lam = 0.99, ridge = 1.0, decay = 0.0) {
+ar_transform <- function(order = 2L, lam = 0.99, ridge = 1.0, decay = 0.0) {
   stopifnot(order >= 1, lam > 0, lam <= 1, decay >= 0)
   force(ridge)
   p <- order
@@ -728,6 +730,11 @@ ar <- function(order = 2L, lam = 0.99, ridge = 1.0, decay = 0.0) {
   }
   list(forward = forward, inverse_k = inverse_k)
 }
+
+# Internal alias: the reference implementation spells this transform `ar`, and
+# the candidate grammar, parity engine, and search recipes call it by that name.
+# Exported as ar_transform so attaching the package does not mask stats::ar (#5).
+ar <- ar_transform
 
 .build_groups <- function(max_lag) {
   groups <- integer(0)

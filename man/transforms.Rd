@@ -14,7 +14,7 @@
 \alias{power_transform}
 \alias{yeo_johnson}
 \alias{fractional_difference}
-\alias{ar}
+\alias{ar_transform}
 \alias{grouped_ar}
 \title{Invertible online transforms}
 \usage{
@@ -44,7 +44,7 @@ yeo_johnson(lmbda = 0)
 
 fractional_difference(d = 0.4, window = 50L)
 
-ar(order = 2L, lam = 0.99, ridge = 1, decay = 0)
+ar_transform(order = 2L, lam = 0.99, ridge = 1, decay = 0)
 
 grouped_ar(max_lag = 16L, lam = 0.99, ridge = 1)
 }
@@ -98,9 +98,11 @@ the original coordinates. Consumed by \code{\link[=conjugate]{conjugate()}}.
 The transform grammar: each factory returns a forward/inverse pair that
 \code{\link[=conjugate]{conjugate()}} wraps around an inner skater, so the inner skater models
 the transformed residual and predictions are mapped back. Port of
-\code{skaters/transform.py}, parity-checked at 1e-6. Note \code{ar} masks
-\code{stats::ar}, and \code{garch} here is the variance-tracking transform, not a
-fitter.
+\code{skaters/transform.py}, parity-checked at 1e-6. The reference spells the
+autoregressive transform \code{ar}; it is exported here as \code{ar_transform}
+(matching \code{ema_transform} and \code{ou_transform}) so attaching the package
+does not mask \code{stats::ar}. Note \code{garch} here is the variance-tracking
+transform, not a fitter.
 }
 \details{
 \code{seasonal_difference} subtracts the value one period ago;
