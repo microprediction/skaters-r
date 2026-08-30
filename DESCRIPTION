@@ -13,6 +13,5 @@ Depends:
     R (>= 3.6.0)
 Suggests:
     jsonlite,
-    testthat,
-    forecast
+    testthat
 Encoding: UTF-8

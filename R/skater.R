@@ -4,9 +4,8 @@
 #' `list(dists, state)`. That closure is the parity surface, verified against
 #' the reference implementation's vectors to 1e-6, and it never changes shape.
 #' `skater()` wraps any such closure in a small S3 object so the usual R
-#' generics work: [observe()] to feed data, [predict.skater()] for
-#' forecast-package-shaped intervals, [quantile.skater()] for quantile paths,
-#' and `print()`.
+#' generics work: [observe()] to feed data, [predict.skater()] for interval
+#' forecasts, [quantile.skater()] for quantile paths, and `print()`.
 #'
 #' The wrapper is deliberately the only integration seam. A faster backend
 #' producing the same closure contract (for example a future Rust-backed
@@ -63,10 +62,9 @@ observe.skater <- function(object, y, ...) {
 
 #' Forecast intervals from a skater
 #'
-#' Returns one row per horizon with the predictive mean and central intervals,
-#' the shape users of the forecast package expect. Quantiles are exact
-#' inversions of the predictive mixture, so an 80\% interval is the 0.1 and
-#' 0.9 quantiles, with no normality assumption.
+#' Returns one row per horizon with the predictive mean and central intervals.
+#' Quantiles are exact inversions of the predictive mixture, so an 80\%
+#' interval is the 0.1 and 0.9 quantiles, with no normality assumption.
 #'
 #' @param object a `"skater"` object that has seen at least one observation.
 #' @param level vector of central interval levels in percent.
@@ -125,21 +123,4 @@ print.skater <- function(x, ...) {
          call. = FALSE)
   }
   object$dists
-}
-
-# forecast::forecast() method, registered only when the forecast package is
-# present. Defining a competing forecast() generic here would clash for users
-# who load both packages, so the method rides the existing generic instead.
-.onLoad <- function(libname, pkgname) {
-  if (requireNamespace("forecast", quietly = TRUE)) {
-    registerS3method("forecast", "skater", .forecast_skater,
-                     envir = asNamespace("forecast"))
-  }
-  invisible()
-}
-
-.forecast_skater <- function(object, h = NULL, level = c(80, 95), ...) {
-  p <- predict.skater(object, level = level)
-  if (!is.null(h)) p <- p[p$h <= h, , drop = FALSE]
-  p
 }
