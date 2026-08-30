@@ -4,6 +4,26 @@
 # API pattern (mirrors the Python tuple):
 #   r <- f(y, state);  r$mean, r$cov (flat row-major n*n), r$state
 
+#' Online covariance estimation
+#'
+#' Streaming estimators processing one observation vector at a time:
+#' `running_cov` (Welford), `ema_cov` (exponentially weighted), and
+#' `ledoit_wolf_cov` (EMA correlations shrunk toward identity).
+#' Port of `skaters/cov/`.
+#'
+#' @param y numeric vector, one observation of the multivariate series.
+#' @param state the list returned by the previous call, or `NULL` to start.
+#' @return `list(mean, cov, state)`: the running mean vector, the covariance
+#'   estimate as a flat row-major vector, and the state to pass back in.
+#' @examples
+#' st <- NULL
+#' for (i in 1:10) {
+#'   r <- running_cov(c(sin(i), cos(i)), st)
+#'   st <- r$state
+#' }
+#' matrix(r$cov, 2, 2)
+#' @rdname cov-estimators
+#' @export
 running_cov <- function(y, state = NULL) {
   n <- length(y)
   if (is.null(state)) {
@@ -20,6 +40,9 @@ running_cov <- function(y, state = NULL) {
   list(mean = state$mean, cov = cov, state = state)
 }
 
+#' @param alpha EMA rate: weight given to the newest observation.
+#' @rdname cov-estimators
+#' @export
 ema_cov <- function(y, state = NULL, alpha = 0.05) {
   n <- length(y)
   if (is.null(state)) {
@@ -33,6 +56,10 @@ ema_cov <- function(y, state = NULL, alpha = 0.05) {
   list(mean = state$mean, cov = state$cov, state = state)
 }
 
+#' @param shrinkage weight of the identity target in the Ledoit-Wolf
+#'   shrinkage of the EMA correlation matrix.
+#' @rdname cov-estimators
+#' @export
 ledoit_wolf_cov <- function(y, state = NULL, alpha = 0.05, shrinkage = 0.5) {
   n <- length(y)
   if (is.null(state)) {

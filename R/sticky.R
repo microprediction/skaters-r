@@ -1,6 +1,22 @@
 # Sticky / lattice projection: mean-preserving near-Dirac atoms at the
 # exact values a series revisits. Port of skaters/sticky.py.
 
+#' Lattice projection for repeat-heavy series
+#'
+#' Wraps a skater and, when the stream shows exact repeats and grid jumps,
+#' projects predictive mass onto the observed lattice (a Dirac component on
+#' the repeat value). Port of `skaters/sticky.py`.
+#'
+#' @param base the skater to wrap.
+#' @param k forecast horizon in steps; must match `base`'s.
+#' @param propensity_alpha EMA rate of the repeat-propensity estimate.
+#' @param spike_frac tolerance, as a fraction of scale, for counting a value
+#'   as an exact repeat.
+#' @param thresh_mult jump-size multiple of scale that marks a grid move.
+#' @param max_atoms cap on lattice atoms tracked.
+#' @param prune_eps weight below which an atom is dropped.
+#' @return a skater: a function `f(y, state)` returning `list(dists, state)`.
+#' @export
 sticky <- function(
   base,
   k = 1L,

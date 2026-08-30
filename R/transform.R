@@ -1,6 +1,34 @@
 # Invertible transforms: (forward, inverse_k) pairs.
 # Ports of skaters/transform.py.
 
+#' Invertible online transforms
+#'
+#' The transform grammar: each factory returns a forward/inverse pair that
+#' [conjugate()] wraps around an inner skater, so the inner skater models
+#' the transformed residual and predictions are mapped back. Port of
+#' `skaters/transform.py`, parity-checked at 1e-6. Note `ar` masks
+#' `stats::ar`, and `garch` here is the variance-tracking transform, not a
+#' fitter.
+#'
+#' `seasonal_difference` subtracts the value one period ago;
+#' `seasonal_anchor` subtracts a hedge between that seasonal-naive value and
+#' a phase-indexed EMA, which adapts as fast as the naive without inheriting
+#' its single-draw noise (`weight = 0` recovers `seasonal_difference`).
+#'
+#' @return a transform: `list(forward, inverse_k)`, where
+#'   `forward(y, tstate)` returns the transformed value and state, and
+#'   `inverse_k(dists, tstate)` maps `k` predictive distributions back to
+#'   the original coordinates. Consumed by [conjugate()].
+#' @examples
+#' f <- conjugate(leaf(k = 1), ema_transform(alpha = 0.1), k = 1)
+#' st <- NULL
+#' for (y in c(5, 5.2, 4.9, 5.1)) {
+#'   r <- f(y, st)
+#'   st <- r$state
+#' }
+#' dist_mean(r$dists[[1]])
+#' @rdname transforms
+#' @export
 difference <- function() {
   forward <- function(y, tstate = NULL) {
     if (is.null(tstate)) {
@@ -25,6 +53,10 @@ difference <- function() {
   list(forward = forward, inverse_k = inverse_k)
 }
 
+#' @param alpha smoothing rate of the running level, variance, or mean
+#'   (for `garch`, the ARCH coefficient).
+#' @rdname transforms
+#' @export
 ema_transform <- function(alpha = 0.05) {
   stopifnot(alpha > 0, alpha < 1)
   forward <- function(y, tstate = NULL) {
@@ -40,6 +72,9 @@ ema_transform <- function(alpha = 0.05) {
   list(forward = forward, inverse_k = inverse_k)
 }
 
+#' @param eps variance floor guarding the division.
+#' @rdname transforms
+#' @export
 standardize <- function(alpha = 0.05, eps = 1e-8) {
   force(alpha)
   force(eps)
@@ -75,6 +110,9 @@ standardize <- function(alpha = 0.05, eps = 1e-8) {
   list(forward = forward, inverse_k = inverse_k)
 }
 
+#' @param kappa mean-reversion rate of the Ornstein-Uhlenbeck pull.
+#' @rdname transforms
+#' @export
 ou_transform <- function(kappa = 0.1, alpha = 0.02) {
   stopifnot(kappa > 0, kappa <= 1, alpha > 0, alpha < 1)
   phi <- 1.0 - kappa
@@ -105,6 +143,8 @@ ou_transform <- function(kappa = 0.1, alpha = 0.02) {
   list(forward = forward, inverse_k = inverse_k)
 }
 
+#' @rdname transforms
+#' @export
 theta <- function(alpha = 0.1) {
   stopifnot(alpha > 0, alpha < 1)
   forward <- function(y, tstate = NULL) {
@@ -144,6 +184,9 @@ theta <- function(alpha = 0.1) {
   list(forward = forward, inverse_k = inverse_k)
 }
 
+#' @param shrinkage pull of the drift estimate toward zero.
+#' @rdname transforms
+#' @export
 drift <- function(alpha = 0.002, shrinkage = 0.001) {
   stopifnot(alpha > 0, alpha < 1, shrinkage >= 0, shrinkage < 1)
   decay <- 1 - alpha - shrinkage
@@ -175,6 +218,9 @@ drift <- function(alpha = 0.002, shrinkage = 0.001) {
   list(forward = forward, inverse_k = inverse_k)
 }
 
+#' @param beta trend smoothing rate (for `garch`, the GARCH coefficient).
+#' @rdname transforms
+#' @export
 holt_linear <- function(alpha = 0.1, beta = 0.05) {
   stopifnot(alpha > 0, alpha < 1, beta > 0, beta < 1)
   forward <- function(y, tstate = NULL) {
@@ -205,6 +251,11 @@ holt_linear <- function(alpha = 0.1, beta = 0.05) {
   list(forward = forward, inverse_k = inverse_k)
 }
 
+#' @param omega constant term of the GARCH variance recursion.
+#' @param mean_alpha EMA rate of the running mean whose deviations the
+#'   variance tracks.
+#' @rdname transforms
+#' @export
 garch <- function(omega = 0.01, alpha = 0.1, beta = 0.85, mean_alpha = 0.05,
                   eps = 1e-8) {
   stopifnot(omega > 0, alpha >= 0, beta >= 0)
@@ -238,6 +289,9 @@ garch <- function(omega = 0.01, alpha = 0.1, beta = 0.85, mean_alpha = 0.05,
   list(forward = forward, inverse_k = inverse_k)
 }
 
+#' @param period season length in observations.
+#' @rdname transforms
+#' @export
 seasonal_difference <- function(period = 12L) {
   stopifnot(period >= 1)
   forward <- function(y, tstate = NULL) {
@@ -297,6 +351,10 @@ seasonal_difference <- function(period = 12L) {
 #
 # Forecasting from same-phase component series follows Viole's NNS package
 # (NNS.ARMA, CRAN, since 2017).
+#' @param weight blend weight of the phase-indexed EMA against the
+#'   seasonal-naive value.
+#' @rdname transforms
+#' @export
 seasonal_anchor <- function(period, alpha = 0.2, weight = 0.5) {
   stopifnot(period >= 1, alpha > 0, alpha < 1, weight >= 0, weight <= 1)
   force(alpha)
@@ -362,6 +420,9 @@ seasonal_anchor <- function(period, alpha = 0.2, weight = 0.5) {
   list(forward = forward, inverse_k = inverse_k)
 }
 
+#' @param p exponent of the signed power map.
+#' @rdname transforms
+#' @export
 power_transform <- function(p = 0.5) {
   stopifnot(p > 0, p < 1)
   inv_p <- 1.0 / p
@@ -392,6 +453,9 @@ power_transform <- function(p = 0.5) {
   list(forward = forward, inverse_k = inverse_k)
 }
 
+#' @param lmbda Yeo-Johnson lambda.
+#' @rdname transforms
+#' @export
 yeo_johnson <- function(lmbda = 0.0) {
   L <- as.numeric(lmbda)
   yj_fwd <- function(y) {
@@ -463,6 +527,10 @@ yeo_johnson <- function(lmbda = 0.0) {
   w
 }
 
+#' @param d fractional differencing order.
+#' @param window truncation window of the fractional filter.
+#' @rdname transforms
+#' @export
 fractional_difference <- function(d = 0.4, window = 50L) {
   w_fwd <- .frac_diff_weights(d, window)
   forward <- function(y, tstate = NULL) {
@@ -562,6 +630,12 @@ fractional_difference <- function(d = 0.4, window = 50L) {
   phi * g^(seq_along(phi))
 }
 
+#' @param order autoregressive order.
+#' @param lam forgetting factor of the recursive least-squares fit.
+#' @param ridge ridge penalty of the fit.
+#' @param decay per-step decay of the fitted coefficients toward zero.
+#' @rdname transforms
+#' @export
 ar <- function(order = 2L, lam = 0.99, ridge = 1.0, decay = 0.0) {
   stopifnot(order >= 1, lam > 0, lam <= 1, decay >= 0)
   force(ridge)
@@ -674,6 +748,9 @@ ar <- function(order = 2L, lam = 0.99, ridge = 1.0, decay = 0.0) {
   groups
 }
 
+#' @param max_lag largest lag available to the grouped fit.
+#' @rdname transforms
+#' @export
 grouped_ar <- function(max_lag = 16L, lam = 0.99, ridge = 1.0) {
   stopifnot(max_lag >= 1, lam > 0, lam <= 1, ridge > 0)
   groups <- .build_groups(max_lag) # 1-based group id per lag j = 1..max_lag

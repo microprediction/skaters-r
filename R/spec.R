@@ -6,6 +6,24 @@
 #   leaf(k) | ema(alpha, k) | ensemble(k, skaters) | conjugate(skater, transform)
 #   transforms: diff | frac(d, window) | std(alpha) | ema_t(alpha)
 
+#' Symbolic specification of skater pipelines
+#'
+#' A spec is a plain list describing how to build a skater; it can be
+#' serialized, compared, and materialized with `spec_build`. `spec_name`
+#' derives the canonical name (transform chains read left to right, e.g.
+#' `"diff|ema_t(0.1)|leaf"`). The `*_spec` functions are constructors for
+#' the grammar. Port of `skaters/spec.py`.
+#'
+#' @param spec a spec list, from the `*_spec` constructors.
+#' @return `spec_build` returns the materialized skater; `spec_name` a
+#'   string; the constructors return spec lists.
+#' @examples
+#' sp <- conjugate_spec(leaf_spec(k = 1), diff_spec())
+#' spec_name(sp)
+#' f <- spec_build(sp)
+#' r <- f(1.5, NULL)
+#' @rdname spec
+#' @export
 spec_build <- function(spec) {
   op <- spec$op
   f <- if (op == "leaf") {
@@ -66,6 +84,8 @@ spec_build <- function(spec) {
   sprintf("%.6g", x)
 }
 
+#' @rdname spec
+#' @export
 spec_name <- function(spec) {
   op <- spec$op
   if (op == "leaf") {
@@ -107,13 +127,36 @@ spec_name <- function(spec) {
 }
 
 # Constructors (convenience, mirror spec.py).
+#' @param k forecast horizon in steps.
+#' @rdname spec
+#' @export
 leaf_spec <- function(k = 1L) list(op = "leaf", k = k)
+#' @param alpha EMA rate.
+#' @rdname spec
+#' @export
 ema_spec <- function(alpha = 0.05, k = 1L) list(op = "ema", alpha = alpha, k = k)
+#' @param ... member specs of the ensemble.
+#' @rdname spec
+#' @export
 ensemble_spec <- function(..., k = 1L) list(op = "ensemble", k = k, skaters = list(...))
+#' @param skater_spec spec of the inner skater.
+#' @param transform_spec spec of the transform wrapped around it.
+#' @rdname spec
+#' @export
 conjugate_spec <- function(skater_spec, transform_spec) {
   list(op = "conjugate", skater = skater_spec, transform = transform_spec)
 }
+#' @rdname spec
+#' @export
 diff_spec <- function() list(op = "diff")
+#' @param d fractional differencing order.
+#' @param window truncation window of the fractional filter.
+#' @rdname spec
+#' @export
 frac_spec <- function(d = 0.4, window = 50L) list(op = "frac", d = d, window = window)
+#' @rdname spec
+#' @export
 std_spec <- function(alpha = 0.05) list(op = "std", alpha = alpha)
+#' @rdname spec
+#' @export
 ema_t_spec <- function(alpha = 0.05) list(op = "ema_t", alpha = alpha)

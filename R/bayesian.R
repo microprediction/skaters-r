@@ -1,6 +1,16 @@
 # Bayesian model averaging ensemble with shrinkage and complexity penalty.
 # Port of skaters/bayesian.py.
 
+#' @param learning_rate multiplier on per-step log-likelihood in the weight
+#'   update.
+#' @param complexity_penalty per-step penalty proportional to member depth.
+#' @param depths numeric vector of member depths for the complexity penalty;
+#'   zero if `NULL`.
+#' @param prior_log_weights starting log-weights; uniform if `NULL`.
+#' @param max_components component budget for the combined mixture, enforced
+#'   by [dist_prune()].
+#' @rdname ensembles
+#' @export
 bayesian_ensemble <- function(
   skaters,
   k = 1L,

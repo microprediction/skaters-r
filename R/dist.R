@@ -1,13 +1,49 @@
 # Gaussian mixture distribution: the distributional prediction type.
 # Faithful port of skaters/dist.py; parity-checked against vectors.json.
 
+#' Gaussian mixture distribution: the distributional prediction type
+#'
+#' Constructors and probes for the Gaussian mixture that every skater emits:
+#' `dist_new(w, m, s)` builds one, `dist_gaussian` a single component,
+#' `dist_combine` a weighted mixture of mixtures. Probes: `dist_mean`,
+#' `dist_var`, `dist_std`, `dist_logpdf`, `dist_cdf`, `dist_crps`,
+#' `dist_quantile`. Affine maps: `dist_shift`, `dist_scale`, `dist_affine`.
+#' `dist_prune` reduces the component count by ulp-tolerant closest-pair
+#' merging. Port of the Python reference `skaters/dist.py`, parity-checked
+#' at 1e-6.
+#'
+#' The probes also accept the tail-spliced distributions produced by
+#' [gpdtails()] and dispatch to the `spliced_*` functions for them.
+#'
+#' @param w numeric vector of mixture weights (normalized internally).
+#' @param m numeric vector of component means.
+#' @param s numeric vector of component standard deviations.
+#' @return Constructors and affine maps return a dist: `list(w, m, s)`.
+#'   `dist_mean`, `dist_var`, `dist_std`, `dist_logpdf`, `dist_cdf`,
+#'   `dist_crps`, and `dist_quantile` return a scalar.
+#' @examples
+#' d <- dist_new(c(0.5, 0.5), c(0, 1), c(1, 2))
+#' dist_mean(d)
+#' dist_quantile(d, 0.9)
+#' dist_crps(d, 0.3)
+#' dist_mean(dist_shift(d, 10))
+#' @rdname dist
+#' @export
 dist_new <- function(w, m, s) {
   stopifnot(length(w) > 0, sum(w) > 0)
   list(w = w / sum(w), m = m, s = s)
 }
 
+#' @param mean mean of the single Gaussian component.
+#' @param std standard deviation of the single Gaussian component.
+#' @rdname dist
+#' @export
 dist_gaussian <- function(mean = 0.0, std = 1.0) dist_new(1.0, mean, std)
 
+#' @param dists list of dists to combine into one mixture.
+#' @param weights weights over `dists`; equal by default.
+#' @rdname dist
+#' @export
 dist_combine <- function(dists, weights = NULL) {
   n <- length(dists)
   if (is.null(weights)) {
@@ -26,6 +62,9 @@ dist_combine <- function(dists, weights = NULL) {
   dist_new(w, m, s)
 }
 
+#' @param d a dist.
+#' @rdname dist
+#' @export
 dist_mean <- function(d) {
   if (isTRUE(d$spliced)) {
     return(spliced_mean(d))
@@ -33,6 +72,8 @@ dist_mean <- function(d) {
   sum(d$w * d$m)
 }
 
+#' @rdname dist
+#' @export
 dist_var <- function(d) {
   if (isTRUE(d$spliced)) {
     return(spliced_var(d))
@@ -41,11 +82,16 @@ dist_var <- function(d) {
   sum(d$w * (d$s^2 + (d$m - mu)^2))
 }
 
+#' @rdname dist
+#' @export
 dist_std <- function(d) {
   v <- dist_var(d)
   if (v > 0) sqrt(v) else 0.0
 }
 
+#' @param x point at which to evaluate the density, cdf, or CRPS.
+#' @rdname dist
+#' @export
 dist_logpdf <- function(d, x) {
   if (isTRUE(d$spliced)) {
     return(spliced_logpdf(d, x))
@@ -69,6 +115,8 @@ dist_logpdf <- function(d, x) {
   b + log(sum(exp(t - b)))
 }
 
+#' @rdname dist
+#' @export
 dist_cdf <- function(d, x) {
   if (isTRUE(d$spliced)) {
     return(spliced_cdf(d, x))
@@ -83,6 +131,8 @@ dist_cdf <- function(d, x) {
   m * (2 * pnorm(m / s) - 1) + 2 * s * dnorm(m / s)
 }
 
+#' @rdname dist
+#' @export
 dist_crps <- function(d, x) {
   if (isTRUE(d$spliced)) {
     return(spliced_crps(d, x))
@@ -97,6 +147,11 @@ dist_crps <- function(d, x) {
   t1 - 0.5 * t2
 }
 
+#' @param p probability in (0, 1).
+#' @param tol bisection tolerance for the quantile search.
+#' @param max_iter bisection iteration cap.
+#' @rdname dist
+#' @export
 dist_quantile <- function(d, p, tol = 1e-9, max_iter = 100L) {
   if (isTRUE(d$spliced)) {
     return(spliced_quantile(d, p, tol = tol, max_iter = max_iter))
@@ -118,13 +173,23 @@ dist_quantile <- function(d, p, tol = 1e-9, max_iter = 100L) {
   0.5 * (lo + hi)
 }
 
+#' @param delta shift added to every component mean.
+#' @rdname dist
+#' @export
 dist_shift <- function(d, delta) dist_new(d$w, d$m + delta, d$s)
 
+#' @param factor scale applied to means and (in absolute value) to sds.
+#' @rdname dist
+#' @export
 dist_scale <- function(d, factor) {
   stopifnot(factor != 0)
   dist_new(d$w, d$m * factor, d$s * abs(factor))
 }
 
+#' @param a multiplier of the affine map `a * x + b`; must be nonzero.
+#' @param b offset of the affine map.
+#' @rdname dist
+#' @export
 dist_affine <- function(d, a, b) {
   stopifnot(a != 0)
   dist_new(d$w, a * d$m + b, abs(a) * d$s)
@@ -134,6 +199,10 @@ dist_affine <- function(d, a, b) {
 # Dist.prune: sorted components, ulp-tolerant first-pair-within-threshold
 # selection (so platforms that disagree at the last ulp merge the same
 # pairs in the same order), moment-matched merges.
+#' @param max_components component budget; closest pairs are moment-matched
+#'   and merged until the mixture fits.
+#' @rdname dist
+#' @export
 dist_prune <- function(d, max_components = 20L) {
   max_components <- max(1L, max_components)
   if (length(d$w) <= max_components) {

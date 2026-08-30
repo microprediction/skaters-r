@@ -134,6 +134,13 @@
 
 # --- the spliced predictive ---
 
+#' @param body the Gaussian-mixture body being spliced.
+#' @param t_lo,t_up lower and upper z-thresholds where the tails take over.
+#' @param zeta_lo,zeta_up probability mass assigned to each tail.
+#' @param g_lo,s_lo shape and scale of the lower generalized-Pareto tail.
+#' @param g_up,s_up shape and scale of the upper generalized-Pareto tail.
+#' @rdname tails
+#' @export
 spliced_new <- function(body, t_lo, t_up, zeta_lo, zeta_up, g_lo, s_lo, g_up, s_up) {
   plo <- pnorm(t_lo)
   pup <- pnorm(t_up)
@@ -161,6 +168,10 @@ spliced_new <- function(body, t_lo, t_up, zeta_lo, zeta_up, g_lo, s_lo, g_up, s_
   .phi_inv(u)
 }
 
+#' @param d a spliced distribution.
+#' @param x point at which to evaluate.
+#' @rdname tails
+#' @export
 spliced_cdf <- function(d, x) {
   z <- .spliced_z(d, x)
   if (z < d$t_lo) {
@@ -172,6 +183,8 @@ spliced_cdf <- function(d, x) {
   d$zeta_lo + d$c * (pnorm(z) - d$plo)
 }
 
+#' @rdname tails
+#' @export
 spliced_logpdf <- function(d, x) {
   base <- dist_logpdf(d$body, x)
   if (!is.finite(base)) {
@@ -188,6 +201,11 @@ spliced_logpdf <- function(d, x) {
   base + corr
 }
 
+#' @param p probability in (0, 1).
+#' @param tol bisection tolerance of the body quantile search.
+#' @param max_iter bisection iteration cap.
+#' @rdname tails
+#' @export
 spliced_quantile <- function(d, p, tol = 1e-9, max_iter = 100L) {
   stopifnot(p > 0, p < 1)
   if (p < d$zeta_lo) {
@@ -205,22 +223,30 @@ spliced_quantile <- function(d, p, tol = 1e-9, max_iter = 100L) {
 # Numeric moments and CRPS over a fixed 65-node quantile grid (midpoint rule).
 .SPLICED_GRID_N <- 65L
 
+#' @rdname tails
+#' @export
 spliced_qgrid <- function(d) {
   n <- .SPLICED_GRID_N
   vapply(seq_len(n), function(i) spliced_quantile(d, (i - 0.5) / n), 0.0)
 }
 
+#' @rdname tails
+#' @export
 spliced_mean <- function(d) {
   q <- spliced_qgrid(d)
   sum(q) / length(q)
 }
 
+#' @rdname tails
+#' @export
 spliced_var <- function(d) {
   q <- spliced_qgrid(d)
   m <- sum(q) / length(q)
   sum((q - m) * (q - m)) / length(q)
 }
 
+#' @rdname tails
+#' @export
 spliced_crps <- function(d, x) {
   q <- spliced_qgrid(d)
   n <- length(q)
@@ -270,6 +296,28 @@ spliced_crps <- function(d, x) {
   tail
 }
 
+#' GPD tail splice
+#'
+#' `gpdtails` wraps a skater and, after a warm-up, splices censored-ML
+#' generalized-Pareto tails into the body's predictive beyond frozen
+#' z-thresholds. The `spliced_*` functions probe the resulting spliced
+#' distribution; [dist_cdf()] and friends dispatch to them when
+#' `d$spliced` is set. Port of `skaters/tails.py`.
+#'
+#' @param base the skater to wrap.
+#' @param k forecast horizon in steps; must match `base`'s.
+#' @param level central probability handled by the body; each tail models
+#'   what lies beyond.
+#' @param nexc exceedances retained per tail for the censored-ML fit.
+#' @param warmup observations before the splice activates.
+#' @param rate_alpha EMA rate of the tail exceedance-rate estimate.
+#' @return `gpdtails` returns a skater `function(y, state)`; once active its
+#'   `dists` are spliced distributions. `spliced_new` returns a spliced
+#'   distribution; `spliced_cdf`, `spliced_logpdf`, `spliced_quantile`,
+#'   `spliced_mean`, `spliced_var`, and `spliced_crps` return scalars;
+#'   `spliced_qgrid` the fixed 65-node quantile grid.
+#' @rdname tails
+#' @export
 gpdtails <- function(base, k, level = 0.98, nexc = 500L, warmup = 500L, rate_alpha = 0.002) {
   stopifnot(k >= 1, level > 0.5, level < 1.0, nexc >= 50, warmup >= 100, rate_alpha > 0.0, rate_alpha < 0.1)
   force(base) # bind now: callers rebind f <- gpdtails(f, ...)

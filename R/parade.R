@@ -4,6 +4,19 @@
 .PARADE_EPS <- 1e-12
 .STD_NORMAL <- dist_gaussian(0.0, 1.0)
 
+#' Prediction parade: PIT/z calibration state
+#'
+#' Pass-through wrapper that scores each arriving observation against the
+#' predictive issued for it, exposing per-horizon PIT values and normal
+#' z-scores in `state$pit` and `state$z`. Also gates pathological inputs
+#' before the tree consumes them. Port of `skaters/parade.py`.
+#'
+#' @param base the skater to wrap.
+#' @param k forecast horizon in steps; must match `base`'s.
+#' @return a skater: a function `f(y, state)` returning `list(dists, state)`
+#'   with `state$pit` and `state$z` holding the per-horizon diagnostics
+#'   (`NA` until a prediction has matured).
+#' @export
 parade <- function(base, k) {
   force(base)
   force(k)

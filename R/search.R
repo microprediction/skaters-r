@@ -159,6 +159,29 @@
   pool
 }
 
+#' Adaptive search over the transform tree
+#'
+#' Beam search over the transform grammar: candidates are scored by
+#' cumulative clamped log-likelihood, top performers are expanded with new
+#' transforms (children replay recent history so they join warm), and losers
+#' are pruned. Named `adaptive_search` because `search` would mask
+#' `base::search`. Port of `skaters/search.py`.
+#'
+#' @param k forecast horizon in steps.
+#' @param learning_rate multiplier on per-step log-likelihood in the weight
+#'   update.
+#' @param complexity_penalty per-step penalty proportional to pipeline depth.
+#' @param max_pool candidate pool ceiling; the worst are pruned past it.
+#' @param expand_interval observations between expansion rounds.
+#' @param expand_top_n candidates expanded per round.
+#' @param max_depth maximum transform-chain depth.
+#' @param replay_buffer recent observations replayed into newborn candidates.
+#' @param prune_threshold log-weight (relative to the best) below which a
+#'   candidate is dropped.
+#' @param max_components component budget for the combined mixture.
+#' @param cost_budget optional cap on total per-step candidate cost.
+#' @return a skater: a function `f(y, state)` returning `list(dists, state)`.
+#' @export
 adaptive_search <- function(
   k = 1L,
   learning_rate = 0.5,
