@@ -11,6 +11,8 @@ a tolerance of 1e-6).
 * S3 wrapper around the closure API: `skater()`, `observe()`, `predict()`,
   `quantile()`, and `print()` methods.
 * NAMESPACE lists every export explicitly instead of pattern-matching.
+* The autoregressive transform is exported as `ar_transform` (the reference
+  spells it `ar`, which masked `stats::ar` on attach).
 * roxygen2 documentation with usage, arguments, and return values for every
   exported function.
 
