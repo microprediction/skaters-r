@@ -27,6 +27,9 @@ dist_combine <- function(dists, weights = NULL) {
 }
 
 dist_mean <- function(d) {
+  if (isTRUE(d$sandwiched)) {
+    return(sandwich_mean(d))
+  }
   if (isTRUE(d$spliced)) {
     return(spliced_mean(d))
   }
@@ -34,6 +37,9 @@ dist_mean <- function(d) {
 }
 
 dist_var <- function(d) {
+  if (isTRUE(d$sandwiched)) {
+    return(sandwich_var(d))
+  }
   if (isTRUE(d$spliced)) {
     return(spliced_var(d))
   }
@@ -47,6 +53,9 @@ dist_std <- function(d) {
 }
 
 dist_logpdf <- function(d, x) {
+  if (isTRUE(d$sandwiched)) {
+    return(sandwich_logpdf(d, x))
+  }
   if (isTRUE(d$spliced)) {
     return(spliced_logpdf(d, x))
   }
@@ -70,6 +79,9 @@ dist_logpdf <- function(d, x) {
 }
 
 dist_cdf <- function(d, x) {
+  if (isTRUE(d$sandwiched)) {
+    return(sandwich_cdf(d, x))
+  }
   if (isTRUE(d$spliced)) {
     return(spliced_cdf(d, x))
   }
@@ -84,6 +96,9 @@ dist_cdf <- function(d, x) {
 }
 
 dist_crps <- function(d, x) {
+  if (isTRUE(d$sandwiched)) {
+    return(sandwich_crps(d, x))
+  }
   if (isTRUE(d$spliced)) {
     return(spliced_crps(d, x))
   }
@@ -98,6 +113,9 @@ dist_crps <- function(d, x) {
 }
 
 dist_quantile <- function(d, p, tol = 1e-9, max_iter = 100L) {
+  if (isTRUE(d$sandwiched)) {
+    return(sandwich_quantile(d, p, tol = tol, max_iter = max_iter))
+  }
   if (isTRUE(d$spliced)) {
     return(spliced_quantile(d, p, tol = tol, max_iter = max_iter))
   }
