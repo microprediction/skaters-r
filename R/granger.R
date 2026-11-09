@@ -171,6 +171,8 @@ granger <- function(params = granger_params("monthly"), k = 1L) {
         # +Inf (an exact hit on a lattice atom) counts as +1e6; NaN or -Inf as -1e6
         state$cum[j] <- state$cum[j] + (if (is.na(lp)) -1e6 else if (lp == Inf) 1e6 else if (is.finite(lp)) lp else -1e6)
       }
+      # re-centre: the weights depend only on the difference
+      state$cum <- state$cum - max(state$cum)
     }
     cur$offset <- .granger_gate(P$gate, .granger_features(state, n))
     r <- tryCatch(ex(yv, state$learned), finally = cur$offset <- NULL)
