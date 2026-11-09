@@ -192,12 +192,17 @@ holt_linear <- function(alpha = 0.1, beta = 0.05) {
     level <- tstate$level
     trend <- tstate$trend
     out <- vector("list", length(dists))
-    cv <- 0.0
     for (h in seq_along(dists)) {
       d <- dists[[h]]
-      cv <- cv + dist_var(d)
       forecast <- level + h * trend + dist_mean(d)
-      std <- if (cv > 0) sqrt(cv) else max(dist_std(d), 1e-12)
+      # ETS(A,A,N): c_0 = 1, c_j = alpha + alpha*beta*j;
+      # Var = sum_j c_j^2 var_{h-j} (skaters#242). j is 0-based as in Python.
+      total_var <- 0.0
+      for (j in 0:(h - 1)) {
+        cc <- if (j == 0) 1.0 else alpha + alpha * beta * j
+        total_var <- total_var + cc * cc * dist_var(dists[[h - j]])
+      }
+      std <- if (total_var > 0) sqrt(total_var) else max(dist_std(d), 1e-12)
       out[[h]] <- dist_gaussian(forecast, std)
     }
     out
@@ -644,7 +649,6 @@ ar <- function(order = 2L, lam = 0.99, ridge = 1.0, decay = 0.0) {
     }
     recovered_means <- numeric(k)
     out <- vector("list", k)
-    cum_psi2 <- 0.0
     for (h in seq_len(k)) {
       ar_mean <- 0.0
       for (j in seq_len(p)) {
@@ -660,8 +664,12 @@ ar <- function(order = 2L, lam = 0.99, ridge = 1.0, decay = 0.0) {
       }
       d <- dists[[h]]
       total_mean <- dist_mean(d) + ar_mean
-      cum_psi2 <- cum_psi2 + psi[h] * psi[h]
-      total_var <- cum_psi2 * dist_var(d)
+      # Var(y_{t+h+1}) = sum_i psi_{h-i}^2 var_i: each future innovation enters
+      # with its own variance (skaters#245); plain accumulation in this order.
+      total_var <- 0.0
+      for (i in seq_len(h)) {
+        total_var <- total_var + psi[h - i + 1] * psi[h - i + 1] * dist_var(dists[[i]])
+      }
       total_std <- if (total_var > 0) sqrt(total_var) else max(dist_std(d), 1e-12)
       recovered_means[h] <- total_mean
       out[[h]] <- dist_gaussian(total_mean, total_std)
@@ -764,7 +772,6 @@ grouped_ar <- function(max_lag = 16L, lam = 0.99, ridge = 1.0) {
     }
     recovered_means <- numeric(k)
     out <- vector("list", k)
-    cum_psi2 <- 0.0
     for (h in seq_len(k)) {
       ar_mean <- 0.0
       for (j in seq_len(max_lag)) {
@@ -780,8 +787,12 @@ grouped_ar <- function(max_lag = 16L, lam = 0.99, ridge = 1.0) {
       }
       d <- dists[[h]]
       total_mean <- dist_mean(d) + ar_mean
-      cum_psi2 <- cum_psi2 + psi[h] * psi[h]
-      total_var <- cum_psi2 * dist_var(d)
+      # Var(y_{t+h+1}) = sum_i psi_{h-i}^2 var_i: each future innovation enters
+      # with its own variance (skaters#245); plain accumulation in this order.
+      total_var <- 0.0
+      for (i in seq_len(h)) {
+        total_var <- total_var + psi[h - i + 1] * psi[h - i + 1] * dist_var(dists[[i]])
+      }
       total_std <- if (total_var > 0) sqrt(total_var) else max(dist_std(d), 1e-12)
       recovered_means[h] <- total_mean
       out[[h]] <- dist_gaussian(total_mean, total_std)
