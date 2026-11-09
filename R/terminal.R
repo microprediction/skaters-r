@@ -10,7 +10,8 @@ terminal_leaf_ensemble <- function(
   depths = NULL,
   prior_log_weights = NULL,
   max_components = 20L,
-  forget = 1.0
+  forget = 1.0,
+  gate_hook = NULL
 ) {
   force(k)
   force(learning_rate)
@@ -64,6 +65,10 @@ terminal_leaf_ensemble <- function(
     }
 
     log_w <- state$log_w
+    # granger's gate shifts the combining weights for this step only; the
+    # recursion above is untouched. laplace passes no hook.
+    off <- if (is.null(gate_hook)) NULL else gate_hook()
+    if (!is.null(off)) log_w <- log_w + off
     max_lw <- max(log_w)
     w <- exp(log_w - max_lw)
     tot <- sum(w)

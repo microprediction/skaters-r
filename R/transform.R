@@ -575,27 +575,36 @@ ar <- function(order = 2L, lam = 0.99, ridge = 1.0, decay = 0.0) {
   }
   forward <- function(y, tstate = NULL) {
     if (is.null(tstate)) {
-      tstate <- list(buffer = numeric(0), phi = numeric(p), P = init_P(), n = 0)
+      tstate <- list(buffer = numeric(0), phi = numeric(p), phi_used = numeric(p), P = init_P(), n = 0)
     }
     st <- tstate
+    if (is.null(st$phi_used)) {
+      # a state from before skaters#232/#235 carries only the raw coefficients
+      st$phi_used <- .ar_stationary(st$phi)
+    }
     st$n <- st$n + 1
     buf <- st$buffer
     if (length(buf) >= p) {
       x <- buf[seq(length(buf), by = -1L, length.out = p)]
-      prediction <- sum(st$phi * x)
-      residual <- y - prediction
+      # the residual EMITTED (and inverse_k's forecast) uses the stationarity-
+      # projected coefficients from the end of the previous tick (skaters#232);
+      # the RLS keeps fitting the raw problem with its own prediction error
+      residual <- y - sum(st$phi_used * x)
+      raw_residual <- y - sum(st$phi * x)
       P <- st$P
       Px <- .rls_mat_vec(P, x, p)
       denom <- lam + sum(x * Px)
       if (abs(denom) > 1e-15) {
         K <- Px / denom
-        st$phi <- st$phi + K * residual
+        st$phi <- st$phi + K * raw_residual
         P <- (P - K %o% Px) / lam
         if (!all(is.finite(P)) || max(abs(P)) > 1e10) {
           P <- init_P()
         }
         st$P <- P
       }
+      # re-project after every update so the next emission and inverse_k agree
+      st$phi_used <- .ar_stationary(st$phi)
     } else {
       residual <- y
     }
@@ -608,9 +617,9 @@ ar <- function(order = 2L, lam = 0.99, ridge = 1.0, decay = 0.0) {
   }
   inverse_k <- function(dists, tstate) {
     buf <- tstate$buffer
-    # Constrain to stationarity: an online fit from few warm-up points can land
-    # on an explosive root whose multi-step forecast diverges.
-    phi <- .ar_stationary(tstate$phi)
+    # The same stationarity-projected coefficients forward() emitted residuals
+    # under (skaters#232); a pre-#235 state has no cache yet, so derive it.
+    phi <- if (!is.null(tstate$phi_used)) tstate$phi_used else .ar_stationary(tstate$phi)
     k <- length(dists)
     # Impulse responses psi_0..psi_{k-1}: psi_0 = 1, psi_i = sum_j phi_j psi_{i-j}.
     # The h-step variance is sigma^2 * sum_{i<=h} psi_i^2, NOT a recursion on the
@@ -689,27 +698,35 @@ grouped_ar <- function(max_lag = 16L, lam = 0.99, ridge = 1.0) {
   }
   forward <- function(y, tstate = NULL) {
     if (is.null(tstate)) {
-      tstate <- list(buffer = numeric(0), theta = numeric(n_groups), P = init_P(), n = 0)
+      tstate <- list(buffer = numeric(0), theta = numeric(n_groups), phi_used = numeric(max_lag),
+                     P = init_P(), n = 0)
     }
     st <- tstate
+    if (is.null(st$phi_used)) {
+      st$phi_used <- .ar_stationary(st$theta[groups])
+    }
     st$n <- st$n + 1
     buf <- st$buffer
     if (length(buf) >= max_lag) {
       x <- group_regressor(buf)
-      prediction <- sum(st$theta * x)
-      residual <- y - prediction
+      # emitted residual under the previous tick's projected per-lag coefficients
+      # (skaters#232); the RLS fits the raw grouped problem with its own error
+      lag_x <- buf[seq(length(buf), by = -1L, length.out = max_lag)]
+      residual <- y - sum(st$phi_used * lag_x)
+      raw_residual <- y - sum(st$theta * x)
       P <- st$P
       Px <- .rls_mat_vec(P, x, n_groups)
       denom <- lam + sum(x * Px)
       if (abs(denom) > 1e-15) {
         K <- Px / denom
-        st$theta <- st$theta + K * residual
+        st$theta <- st$theta + K * raw_residual
         P <- (P - K %o% Px) / lam
         if (!all(is.finite(P)) || max(abs(P)) > 1e10) {
           P <- init_P()
         }
         st$P <- P
       }
+      st$phi_used <- .ar_stationary(st$theta[groups])
     } else {
       residual <- y
     }
@@ -724,7 +741,7 @@ grouped_ar <- function(max_lag = 16L, lam = 0.99, ridge = 1.0) {
     buf <- tstate$buffer
     # Expand group coefficients to per-lag, then constrain to stationarity for a
     # well-posed forecast (same as ar(); grouped AR is AR-family).
-    phi <- .ar_stationary(tstate$theta[groups])
+    phi <- if (!is.null(tstate$phi_used)) tstate$phi_used else .ar_stationary(tstate$theta[groups])
     k <- length(dists)
     # Impulse responses, as in ar(): the h-step variance is
     # sigma^2 * sum_{i<=h} psi_i^2, not a recursion on recovered variances.
