@@ -161,7 +161,8 @@ dist_prune <- function(d, max_components = 20L) {
   w <- d$w[ord]
   m <- d$m[ord]
   s <- d$s[ord]
-  scale <- abs(m[1]) + abs(m[length(m)]) + 1e-12
+  # translation-invariant tie scale: the span of the sorted means (skaters#226)
+  scale <- (m[length(m)] - m[1]) + 1e-12
   while (length(w) > max_components) {
     n <- length(w)
     best_dist <- Inf

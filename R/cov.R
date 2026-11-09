@@ -33,48 +33,20 @@ ema_cov <- function(y, state = NULL, alpha = 0.05) {
   list(mean = state$mean, cov = state$cov, state = state)
 }
 
+# skaters#224: delegate to ema_cov (a rank-one EMA update, PSD by
+# construction) and shrink THAT covariance's off-diagonal:
+# (1 - rho) * C + rho * diag(C) stays PSD whenever C is. The prior version
+# updated each pairwise correlation independently, which is not PSD-safe.
 ledoit_wolf_cov <- function(y, state = NULL, alpha = 0.05, shrinkage = 0.5) {
   n <- length(y)
-  if (is.null(state)) {
-    corr <- numeric(n * n)
-    corr[seq(1L, n * n, by = n + 1L)] <- 1.0
-    state <- list(mean = as.numeric(y), var = numeric(n), corr = corr, n = 1L)
-    return(list(mean = as.numeric(y), cov = numeric(n * n), state = state))
-  }
-  state$n <- state$n + 1L
-  delta <- y - state$mean
-  state$mean <- state$mean + alpha * delta
-  delta2 <- y - state$mean
-  state$var <- (1 - alpha) * state$var + alpha * delta * delta2
-
-  # Update correlations in standardized space, clamped to [-1, 1].
-  s <- ifelse(state$var > 1e-16, sqrt(state$var), 1e-8)
-  corr <- state$corr
-  for (i in seq_len(n)) {
-    if (i < n) {
-      for (j in (i + 1L):n) {
-        z_cross <- (delta[i] / s[i]) * (delta[j] / s[j])
-        idx <- (i - 1L) * n + j
-        r <- (1 - alpha) * corr[idx] + alpha * z_cross
-        r <- max(-1.0, min(1.0, r))
-        corr[idx] <- r
-        corr[(j - 1L) * n + i] <- r
-      }
-    }
-  }
-  state$corr <- corr
-
-  # Shrink correlation toward identity and reconstitute the covariance.
+  r <- ema_cov(y, if (is.null(state)) NULL else state$inner, alpha = alpha)
+  cov <- r$cov
   shrunk <- numeric(n * n)
   for (i in seq_len(n)) {
     for (j in seq_len(n)) {
       idx <- (i - 1L) * n + j
-      shrunk[idx] <- if (i == j) {
-        state$var[i]
-      } else {
-        (1 - shrinkage) * corr[idx] * s[i] * s[j]
-      }
+      shrunk[idx] <- if (i == j) cov[idx] else (1 - shrinkage) * cov[idx]
     }
   }
-  list(mean = state$mean, cov = shrunk, state = state)
+  list(mean = r$mean, cov = shrunk, state = list(inner = r$state))
 }

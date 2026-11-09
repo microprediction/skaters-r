@@ -127,12 +127,17 @@
         next
       }
       existing <- c(existing, key)
-      children[[length(children) + 1L]] <- .search_entry(
+      child <- .search_entry(
         length(new_recipe),
         new_recipe,
         k,
         cost = child_cost
       )
+      # Parent-relative initialization (skaters#223): a child inherits the
+      # parent's current log-evidence, as it inherits its warm state, so prune
+      # does not compare an unscored zero against a lifetime sum.
+      child$log_w <- parent$log_w
+      children[[length(children) + 1L]] <- child
     }
   }
   children
