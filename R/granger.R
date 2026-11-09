@@ -126,11 +126,13 @@ mixture_quantile <- function(d, p, tol = 1e-9, max_iter = 200L) {
   qs <- vapply(d$dists, function(q) dist_quantile(q, p), 0.0)
   lo <- min(qs)
   hi <- max(qs)
-  if (hi - lo < tol) return(0.5 * (lo + hi))
+  # absolute tol at scale >= 1, relative below it so small-scale series keep their digits
+  tol <- tol * min(1.0, max(abs(lo), abs(hi)))
+  if (hi - lo <= tol) return(0.5 * (lo + hi))
   for (i in seq_len(max_iter)) {
     mid <- 0.5 * (lo + hi)
     if (mixture_cdf(d, mid) < p) lo <- mid else hi <- mid
-    if (hi - lo < tol) break
+    if (hi - lo <= tol) break
   }
   0.5 * (lo + hi)
 }
