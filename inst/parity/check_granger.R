@@ -9,12 +9,16 @@ worst <- 0; bad <- 0
 for (key in names(V)) {
   freq <- strsplit(key, "/")[[1]][1]
   g <- granger(granger_params(freq))
-  ys <- unlist(V[[key]]$ys); rows <- V[[key]]$rows
+  # null = a missing observation (unlist would silently drop it)
+  ys <- vapply(V[[key]]$ys, function(v) if (is.null(v)) NaN else as.numeric(v), 0.0)
+  rows <- V[[key]]$rows
   s <- NULL
   for (t in seq_len(length(ys) - 1)) {
     r <- g(ys[t], s); s <- r$state; m <- r$dists[[1]]
     got <- c(dist_logpdf(m, ys[t + 1]), dist_mean(m), dist_std(m), m$w[1], dist_quantile(m, 0.1), dist_quantile(m, 0.9))
-    want <- unlist(rows[[t]])
+    want <- vapply(rows[[t]], function(v) if (is.null(v)) NA_real_ else as.numeric(v), 0.0)
+    keep <- !is.na(want)                     # no score at a missing next value
+    got <- got[keep]; want <- want[keep]
     dev <- abs(got - want)
     worst <- max(worst, max(dev / pmax(1, abs(want))))
     if (any(dev > ATOL + RTOL * abs(want))) {

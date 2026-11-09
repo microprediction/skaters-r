@@ -5,7 +5,8 @@
 # After Clive Granger, whose work with Bates (1969) founded forecast
 # combination. The issued predictive is the Aggregating-Algorithm mixture of
 # laplace and its trained twin under log loss, so its total log score is never
-# more than log(1 / pi_lap) behind laplace's (log 4 at the shipped 0.25).
+# more than log(1 / pi_lap) behind laplace's (log 4 at the shipped 0.25), up to
+# floating-point rounding.
 
 #' Shipped granger parameters ("monthly", "weekly" or "hourly").
 #' @export
@@ -101,8 +102,10 @@ granger_params <- function(frequency = c("monthly", "weekly", "hourly")) {
 }
 
 mixture_logpdf <- function(d, x) {
-  t <- d$log_w + vapply(d$dists, function(q) dist_logpdf(q, x), 0.0)
+  v <- vapply(d$dists, function(q) dist_logpdf(q, x), 0.0)
+  t <- ifelse(is.na(v), -Inf, d$log_w + v)   # a NaN component contributes nothing
   m <- max(t)
+  if (m == Inf) return(Inf)
   if (m == -Inf) return(-Inf)
   m + log(sum(exp(t - m)))
 }
@@ -147,6 +150,7 @@ mixture_crps <- function(d, x, n = 65L) {
 granger <- function(params = granger_params("monthly"), k = 1L) {
   if (k != 1L) stop("granger is trained at horizon 1 only")
   P <- params
+  if (!(P$pi_lap > 0 && P$pi_lap < 1)) stop("pi_lap must lie in (0, 1)")
   log_prior <- c(log(P$pi_lap), log(1.0 - P$pi_lap))
   ref <- laplace(1L)
   cur <- new.env(parent = emptyenv())
@@ -164,7 +168,8 @@ granger <- function(params = granger_params("monthly"), k = 1L) {
     if (finite && !is.null(state$pend)) {
       for (j in 1:2) {
         lp <- dist_logpdf(state$pend[[j]], yv)
-        state$cum[j] <- state$cum[j] + (if (is.finite(lp)) lp else -1e6)
+        # +Inf (an exact hit on a lattice atom) counts as +1e6; NaN or -Inf as -1e6
+        state$cum[j] <- state$cum[j] + (if (is.na(lp)) -1e6 else if (lp == Inf) 1e6 else if (is.finite(lp)) lp else -1e6)
       }
     }
     cur$offset <- .granger_gate(P$gate, .granger_features(state, n))
