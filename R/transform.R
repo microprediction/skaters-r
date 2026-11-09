@@ -532,16 +532,23 @@ fractional_difference <- function(d = 0.4, window = 50L) {
     }
     return(sqrt((a / 2.0)^2 + (sqrt(-disc) / 2.0)^2)) # |complex root|
   }
-  v <- rep(1.0, p)
-  rho <- 0.0
-  for (.i in seq_len(60)) {
-    nv <- c(sum(phi * v), v[-p])
-    m <- max(abs(nv))
-    if (m == 0) m <- 1.0
-    v <- nv / m
-    rho <- m
+  # Two seeds (all-ones and alternating +-1), max of the two: a single seed can
+  # be an eigenvector of a non-dominant root and miss the true radius
+  # (phi = c(3, -2, 0, 0, 0) read 1 instead of 2; skaters#232/#235).
+  best <- 0.0
+  for (seed in list(rep(1.0, p), (-1.0)^(seq_len(p) - 1L))) {
+    v <- seed
+    rho <- 0.0
+    for (.i in seq_len(60)) {
+      nv <- c(sum(phi * v), v[-p])
+      m <- max(abs(nv))
+      if (m == 0) m <- 1.0
+      v <- nv / m
+      rho <- m
+    }
+    best <- max(best, rho)
   }
-  rho
+  best
 }
 
 # Damp AR coefficients into the stationary region for forecasting.
