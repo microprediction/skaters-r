@@ -124,6 +124,31 @@ dist_quantile <- function(d, p, tol = 1e-9, max_iter = 100L) {
   sigma <- sqrt(dist_var(d))
   lo <- mu - 8 * sigma
   hi <- mu + 8 * sigma
+  # Expand the mu +- 8 sigma bracket geometrically until it contains p (a small
+  # far component can put the quantile outside it); never fires when the
+  # original bracket sufficed, so ordinary results are unchanged (skaters 21f1de5).
+  width <- max(16 * sigma, 1e-12)
+  ok <- FALSE
+  for (i in seq_len(120)) {
+    if (dist_cdf(d, lo) <= p) {
+      ok <- TRUE
+      break
+    }
+    lo <- lo - width
+    width <- width * 2.0
+  }
+  if (!ok) stop(sprintf("could not bracket quantile p=%g from below", p))
+  width <- max(16 * sigma, 1e-12)
+  ok <- FALSE
+  for (i in seq_len(120)) {
+    if (dist_cdf(d, hi) >= p) {
+      ok <- TRUE
+      break
+    }
+    hi <- hi + width
+    width <- width * 2.0
+  }
+  if (!ok) stop(sprintf("could not bracket quantile p=%g from above", p))
   for (i in seq_len(max_iter)) {
     mid <- 0.5 * (lo + hi)
     if (dist_cdf(d, mid) < p) {
