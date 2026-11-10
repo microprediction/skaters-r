@@ -2,6 +2,7 @@
 # Port of skaters/parade.py. Pass-through for the forecasts themselves.
 
 .PARADE_EPS <- 1e-12
+.NO_INFO_STD <- 1e6
 .STD_NORMAL <- dist_gaussian(0.0, 1.0)
 
 parade <- function(base, k) {
@@ -9,10 +10,31 @@ parade <- function(base, k) {
   force(k)
   function(y, state = NULL) {
     if (is.null(state)) {
-      state <- list(base = NULL, pending = list(), pit = rep(NA_real_, k), z = rep(NA_real_, k))
+      state <- list(base = NULL, pending = list(), pit = rep(NA_real_, k), z = rep(NA_real_, k),
+                    skipped = 0L)
     }
     pend <- state$pending
     n <- length(pend)
+    # Missing observation (the reference's parade.py): a non-finite y never
+    # reaches the tree. The base state is left as it was and the fan is
+    # shifted -- the previous tick's horizon h+1 is this tick's horizon h -- so
+    # the forecast ages by one step; after k gaps the h=k predictive is held.
+    if (is.null(y) || !is.numeric(y) || !is.finite(y)) {
+      state$skipped <- (if (is.null(state$skipped)) 0L else state$skipped) + 1L
+      state$pit <- rep(NA_real_, k)
+      state$z <- rep(NA_real_, k)
+      if (n == 0) {
+        return(list(dists = lapply(seq_len(k), function(i) dist_gaussian(0.0, .NO_INFO_STD)), state = state))
+      }
+      prev <- pend[[n]]
+      shifted <- lapply(seq_len(k), function(h) prev[[min(h + 1L, length(prev))]])
+      pend[[length(pend) + 1L]] <- shifted
+      if (length(pend) > k) {
+        pend <- pend[-1]
+      }
+      state$pending <- pend
+      return(list(dists = shifted, state = state))
+    }
     pit <- rep(NA_real_, k)
     z <- rep(NA_real_, k)
     for (m in seq_len(k)) {

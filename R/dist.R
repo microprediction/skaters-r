@@ -27,6 +27,9 @@ dist_combine <- function(dists, weights = NULL) {
 }
 
 dist_mean <- function(d) {
+  if (isTRUE(d$mixture)) {
+    return(mixture_mean(d))
+  }
   if (isTRUE(d$spliced)) {
     return(spliced_mean(d))
   }
@@ -34,6 +37,9 @@ dist_mean <- function(d) {
 }
 
 dist_var <- function(d) {
+  if (isTRUE(d$mixture)) {
+    return(mixture_var(d))
+  }
   if (isTRUE(d$spliced)) {
     return(spliced_var(d))
   }
@@ -47,6 +53,9 @@ dist_std <- function(d) {
 }
 
 dist_logpdf <- function(d, x) {
+  if (isTRUE(d$mixture)) {
+    return(mixture_logpdf(d, x))
+  }
   if (isTRUE(d$spliced)) {
     return(spliced_logpdf(d, x))
   }
@@ -70,6 +79,9 @@ dist_logpdf <- function(d, x) {
 }
 
 dist_cdf <- function(d, x) {
+  if (isTRUE(d$mixture)) {
+    return(mixture_cdf(d, x))
+  }
   if (isTRUE(d$spliced)) {
     return(spliced_cdf(d, x))
   }
@@ -84,6 +96,9 @@ dist_cdf <- function(d, x) {
 }
 
 dist_crps <- function(d, x) {
+  if (isTRUE(d$mixture)) {
+    return(mixture_crps(d, x))
+  }
   if (isTRUE(d$spliced)) {
     return(spliced_crps(d, x))
   }
@@ -98,6 +113,9 @@ dist_crps <- function(d, x) {
 }
 
 dist_quantile <- function(d, p, tol = 1e-9, max_iter = 100L) {
+  if (isTRUE(d$mixture)) {
+    return(mixture_quantile(d, p))
+  }
   if (isTRUE(d$spliced)) {
     return(spliced_quantile(d, p, tol = tol, max_iter = max_iter))
   }
@@ -106,6 +124,31 @@ dist_quantile <- function(d, p, tol = 1e-9, max_iter = 100L) {
   sigma <- sqrt(dist_var(d))
   lo <- mu - 8 * sigma
   hi <- mu + 8 * sigma
+  # Expand the mu +- 8 sigma bracket geometrically until it contains p (a small
+  # far component can put the quantile outside it); never fires when the
+  # original bracket sufficed, so ordinary results are unchanged (skaters 21f1de5).
+  width <- max(16 * sigma, 1e-12)
+  ok <- FALSE
+  for (i in seq_len(120)) {
+    if (dist_cdf(d, lo) <= p) {
+      ok <- TRUE
+      break
+    }
+    lo <- lo - width
+    width <- width * 2.0
+  }
+  if (!ok) stop(sprintf("could not bracket quantile p=%g from below", p))
+  width <- max(16 * sigma, 1e-12)
+  ok <- FALSE
+  for (i in seq_len(120)) {
+    if (dist_cdf(d, hi) >= p) {
+      ok <- TRUE
+      break
+    }
+    hi <- hi + width
+    width <- width * 2.0
+  }
+  if (!ok) stop(sprintf("could not bracket quantile p=%g from above", p))
   for (i in seq_len(max_iter)) {
     mid <- 0.5 * (lo + hi)
     if (dist_cdf(d, mid) < p) {
@@ -143,7 +186,8 @@ dist_prune <- function(d, max_components = 20L) {
   w <- d$w[ord]
   m <- d$m[ord]
   s <- d$s[ord]
-  scale <- abs(m[1]) + abs(m[length(m)]) + 1e-12
+  # translation-invariant tie scale: the span of the sorted means (skaters#226)
+  scale <- (m[length(m)] - m[1]) + 1e-12
   while (length(w) > max_components) {
     n <- length(w)
     best_dist <- Inf

@@ -39,8 +39,9 @@ precision_weighted_ensemble <- function(skaters, k = 1L, floor = 1e-6) {
       weights <- numeric(n)
       for (i in seq_len(n)) {
         mse <- running_mse_get(state$stats[[i]][[h]])
-        w <- if (is.finite(mse) && mse > 0) 1.0 / mse else floor
-        weights[i] <- max(w, floor)
+        # inf exactly when immature; a mature perfect forecaster (mse == 0)
+        # gets the highest precision, capped at 1/floor (skaters#220).
+        weights[i] <- if (is.finite(mse)) 1.0 / max(mse, floor) else floor
       }
       horizon_dists <- lapply(seq_len(n), function(i) all_dists[[i]][[h]])
       combined[[h]] <- dist_combine(horizon_dists, weights)

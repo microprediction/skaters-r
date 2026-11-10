@@ -193,12 +193,18 @@ garch_leaf <- function(k = 1L, gamma = 0.02, refit_every = 40L, min_obs = 80L, w
               om <- max(base * cc, 1e-12)
               hh <- om / (1.0 - al - be)
               v <- 0.0
+              prev <- NULL
               for (r in resid) {
-                hh <- om + al * (r * r) + be * hh
-                if (hh <= 1e-300) {
-                  hh <- 1e-300
+                # h_t is built from r_{t-1}, never from r_t itself; the first
+                # point is scored under the unconditional variance (skaters#244).
+                if (!is.null(prev)) {
+                  hh <- om + al * (prev * prev) + be * hh
+                  if (hh <= 1e-300) {
+                    hh <- 1e-300
+                  }
                 }
                 v <- v + log(hh) + (r * r) / hh
+                prev <- r
               }
               if (v < best_v) {
                 # first-wins on ties
@@ -225,7 +231,15 @@ garch_leaf <- function(k = 1L, gamma = 0.02, refit_every = 40L, min_obs = 80L, w
       g <- max(gamma, 1.0 / s$n)
       s$w <- (1 - g) * w + g * dens / total
     }
-    d <- dist_new(s$w, numeric(K), C * sigma)
+    # The emitted Dist forecasts r_{t+1}, so its scale is the NEXT conditional
+    # variance h_{t+1} = omega + alpha r_t^2 + beta h_t under the (possibly just
+    # refit) parameters; `sigma` above scores r_t for the weight update (skaters#239).
+    h_next <- s$omega + s$alpha * y * y + s$beta * h
+    if (!(is.finite(h_next) && h_next > 1e-300)) {
+      h_next <- s$s2
+    }
+    sigma_next <- sqrt(h_next)
+    d <- dist_new(s$w, numeric(K), C * sigma_next)
     list(dists = rep(list(d), k), state = s)
   }
 }

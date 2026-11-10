@@ -279,7 +279,7 @@ gpdtails <- function(base, k, level = 0.98, nexc = 500L, warmup = 500L, rate_alp
         base = NULL,
         pending = list(),
         tails = lapply(seq_len(k), function(m) {
-          list(up = .tail_new(), lo = .tail_new(), warm = numeric(0), n = 0L)
+          list(up = .tail_new(), lo = .tail_new(), warm = numeric(0), n = 0L, skipped = 0L)
         })
       )
     }
@@ -300,6 +300,15 @@ gpdtails <- function(base, k, level = 0.98, nexc = 500L, warmup = 500L, rate_alp
       up <- th$up
       lo <- th$lo
       if (is.null(up$t)) {
+        # The first 2m resolved z's at horizon m >= 2 are PITs of the trunk's
+        # warm-up fallback, not of the body this splice calibrates; they stay
+        # out of the threshold sample. m = 1 is untouched (skaters 450ad05).
+        skipped <- if (is.null(th$skipped)) 0L else th$skipped
+        if (m >= 2 && skipped < 2L * m) {
+          th$skipped <- skipped + 1L
+          state$tails[[m]] <- th
+          next
+        }
         th$warm <- c(th$warm, z)
         if (length(th$warm) >= warmup) {
           w <- sort(th$warm)

@@ -35,7 +35,22 @@ ema_transform <- function(alpha = 0.05) {
     list(y = residual, state = list(level = tstate$level + alpha * residual))
   }
   inverse_k <- function(dists, tstate) {
-    lapply(dists, dist_shift, delta = tstate$level)
+    # Shift by the level and convolve in the level's own innovation response:
+    # Var(y_{t+h+1}) = var_h + alpha^2 sum_{i<h} var_i (ETS(A,N,N); skaters#254).
+    # Component-wise, so the leaf's shape is kept.
+    level <- tstate$level
+    out <- vector("list", length(dists))
+    add <- 0.0
+    for (h in seq_along(dists)) {
+      d <- dists[[h]]
+      out[[h]] <- if (add > 0.0) {
+        dist_new(d$w, d$m + level, sqrt(d$s * d$s + add))
+      } else {
+        dist_shift(d, level)
+      }
+      add <- add + alpha * alpha * dist_var(d)
+    }
+    out
   }
   list(forward = forward, inverse_k = inverse_k)
 }
@@ -97,7 +112,20 @@ ou_transform <- function(kappa = 0.1, alpha = 0.02) {
     out <- vector("list", length(dists))
     for (h in seq_along(dists)) {
       center <- m + (phi^h) * (ylast - m)
-      g <- if (phi < 1.0 - 1e-9) sqrt((1.0 - phi^(2 * h)) / (1.0 - phi * phi)) else sqrt(h)
+      # Var(y_{t+h}) = sum_{i<h} phi^{2(h-1-i)} var_i: each future innovation
+      # decays from its own time (skaters#256), as a scale on this horizon's Dist.
+      v_h <- dist_var(dists[[h]])
+      g <- if (v_h > 0.0) {
+        tot <- 0.0
+        for (i in 0:(h - 1)) {
+          tot <- tot + (phi^(2 * (h - 1 - i))) * dist_var(dists[[i + 1]])
+        }
+        sqrt(tot / v_h)
+      } else if (phi < 1.0 - 1e-9) {
+        sqrt((1.0 - phi^(2 * h)) / (1.0 - phi * phi))
+      } else {
+        sqrt(h)
+      }
       out[[h]] <- dist_shift(dist_scale(dists[[h]], g), center)
     }
     out
@@ -131,12 +159,17 @@ theta <- function(alpha = 0.1) {
     ses <- tstate$ses
     slope <- if (is.null(tstate$slope)) 0.0 else tstate$slope
     out <- vector("list", length(dists))
-    cv <- 0.0
     for (h in seq_along(dists)) {
       d <- dists[[h]]
-      cv <- cv + dist_var(d)
       forecast <- ses + h * slope / 2 + dist_mean(d)
-      std <- if (cv > 0) sqrt(cv) else max(dist_std(d), 1e-12)
+      # SES response: c_0 = 1, c_j = alpha; Var = sum_j c_j^2 var_{h-j}
+      # (skaters#253). The running-OLS slope's O(1/t) response is dropped.
+      total_var <- 0.0
+      for (j in 0:(h - 1)) {
+        cc <- if (j == 0) 1.0 else alpha
+        total_var <- total_var + cc * cc * dist_var(dists[[h - j]])
+      }
+      std <- if (total_var > 0) sqrt(total_var) else max(dist_std(d), 1e-12)
       out[[h]] <- dist_gaussian(forecast, std)
     }
     out
@@ -159,15 +192,28 @@ drift <- function(alpha = 0.002, shrinkage = 0.001) {
   inverse_k <- function(dists, tstate) {
     anchor <- tstate$last
     mu <- tstate$mu
+    rho <- decay + alpha # 1 - shrinkage: persistence of the drift estimate
     out <- vector("list", length(dists))
     cm <- 0.0
-    cv <- 0.0
     for (h in seq_along(dists)) {
       d <- dists[[h]]
       cm <- cm + dist_mean(d)
-      cv <- cv + dist_var(d)
       total_mean <- anchor + h * mu + cm
-      std <- if (cv > 0) sqrt(cv) else max(dist_std(d), 1e-12)
+      # The innovation at t+i+1 reaches y_{t+h+1} directly and through the
+      # drift estimate on each later step: c = 1 + alpha * sum_{m<h-i} rho^m
+      # (skaters#257); i is 0-based, h here is 1-based.
+      total_var <- 0.0
+      for (i in 0:(h - 1)) {
+        acc <- 0.0
+        f <- 1.0
+        for (.m in seq_len(h - 1 - i)) {
+          acc <- acc + f
+          f <- f * rho
+        }
+        cc <- 1.0 + alpha * acc
+        total_var <- total_var + cc * cc * dist_var(dists[[i + 1]])
+      }
+      std <- if (total_var > 0) sqrt(total_var) else max(dist_std(d), 1e-12)
       out[[h]] <- dist_gaussian(total_mean, std)
     }
     out
@@ -192,12 +238,17 @@ holt_linear <- function(alpha = 0.1, beta = 0.05) {
     level <- tstate$level
     trend <- tstate$trend
     out <- vector("list", length(dists))
-    cv <- 0.0
     for (h in seq_along(dists)) {
       d <- dists[[h]]
-      cv <- cv + dist_var(d)
       forecast <- level + h * trend + dist_mean(d)
-      std <- if (cv > 0) sqrt(cv) else max(dist_std(d), 1e-12)
+      # ETS(A,A,N): c_0 = 1, c_j = alpha + alpha*beta*j;
+      # Var = sum_j c_j^2 var_{h-j} (skaters#242). j is 0-based as in Python.
+      total_var <- 0.0
+      for (j in 0:(h - 1)) {
+        cc <- if (j == 0) 1.0 else alpha + alpha * beta * j
+        total_var <- total_var + cc * cc * dist_var(dists[[h - j]])
+      }
+      std <- if (total_var > 0) sqrt(total_var) else max(dist_std(d), 1e-12)
       out[[h]] <- dist_gaussian(forecast, std)
     }
     out
@@ -328,7 +379,12 @@ seasonal_anchor <- function(period, alpha = 0.2, weight = 0.5) {
     buf <- tstate$buffer
     k <- length(dists)
     recovered_means <- numeric(k)
-    recovered_vars <- numeric(k)
+    # Innovation-response rows for each recovered value and each phase's EMA:
+    # the forward updates a phase's EMA from recovered values too, so an anchor
+    # at h >= period responds to the recovered value one period back through
+    # both the naive term and the EMA term (skaters#258).
+    rec_resp <- vector("list", k)
+    ema_resp <- rep(list(numeric(k)), period)
     out <- vector("list", k)
     for (h in seq_len(k)) {
       hh <- h - 1 # 0-based horizon
@@ -341,16 +397,28 @@ seasonal_anchor <- function(period, alpha = 0.2, weight = 0.5) {
         } else {
           buf[length(buf)]
         }
-        snaive_var <- 0.0
+        sn_resp <- NULL
       } else {
         snaive <- recovered_means[lag_idx + 1]
-        snaive_var <- recovered_vars[lag_idx + 1]
+        sn_resp <- rec_resp[[lag_idx + 1]]
       }
-      a_mean <- anchor_of(tstate$ema[[p + 1]], snaive)
-      a_var <- ((1.0 - weight)^2) * snaive_var
+      e <- tstate$ema[[p + 1]]
+      a_mean <- anchor_of(e, snaive)
+      a_resp <- numeric(k)
+      for (i in seq_len(hh)) {
+        sn <- if (!is.null(sn_resp)) sn_resp[i] else 0.0
+        a_resp[i] <- if (!is.null(e)) weight * ema_resp[[p + 1]][i] + (1.0 - weight) * sn else sn
+      }
+      a_var <- 0.0
+      for (i in seq_len(hh)) {
+        a_var <- a_var + a_resp[i] * a_resp[i] * dist_var(dists[[i]])
+      }
+      r <- a_resp
+      r[h] <- 1.0
       d <- dists[[h]]
       recovered_means[h] <- dist_mean(d) + a_mean
-      recovered_vars[h] <- dist_var(d) + a_var
+      rec_resp[[h]] <- r
+      ema_resp[[p + 1]] <- if (is.null(e)) r else (1.0 - alpha) * ema_resp[[p + 1]] + alpha * r
       out[[h]] <- if (a_var > 0.0) {
         dist_new(d$w, d$m + a_mean, sqrt(d$s * d$s + a_var))
       } else {
@@ -478,23 +546,47 @@ fractional_difference <- function(d = 0.4, window = 50L) {
     list(y = y_prime, state = list(buffer = buf))
   }
   inverse_k <- function(dists, tstate) {
+    # Recovered earlier horizons are uncertain and feed back through the same
+    # weights (skaters#255): each recovered value carries a row of responses to
+    # the future innovations, built by the same recursion as its mean, and
+    # Var(y_{t+h+1}) = sum_i c_{h,i}^2 var_i. NULL rows mark known values.
+    H <- length(dists)
     buf <- tstate$buffer
-    out <- vector("list", length(dists))
+    cbuf <- vector("list", length(buf))
+    out <- vector("list", H)
     for (i in seq_along(dists)) {
       d_in <- dists[[i]]
       buf <- c(buf, 0.0)
+      cbuf <- c(cbuf, list(NULL))
       n <- length(buf)
       shift <- 0.0
+      coef <- numeric(H)
+      coef[i] <- 1.0
       jmax <- min(n, window) - 1
       if (jmax >= 1) {
         for (j in seq_len(jmax)) {
           shift <- shift - w_fwd[j + 1] * buf[n - j]
+          cj <- cbuf[[n - j]]
+          if (!is.null(cj)) {
+            for (ii in seq_len(i - 1)) {
+              coef[ii] <- coef[ii] - w_fwd[j + 1] * cj[ii]
+            }
+          }
         }
       }
       recovered <- dist_mean(d_in) + shift
       buf[n] <- recovered
-      out[[i]] <- dist_gaussian(recovered, dist_std(d_in))
-      if (length(buf) > window) buf <- buf[-1]
+      cbuf[[n]] <- coef
+      total_var <- 0.0
+      for (ii in seq_len(i)) {
+        total_var <- total_var + coef[ii] * coef[ii] * dist_var(dists[[ii]])
+      }
+      std <- if (total_var > 0) sqrt(total_var) else max(dist_std(d_in), 1e-12)
+      out[[i]] <- dist_gaussian(recovered, std)
+      if (length(buf) > window) {
+        buf <- buf[-1]
+        cbuf <- cbuf[-1]
+      }
     }
     out
   }
@@ -532,16 +624,23 @@ fractional_difference <- function(d = 0.4, window = 50L) {
     }
     return(sqrt((a / 2.0)^2 + (sqrt(-disc) / 2.0)^2)) # |complex root|
   }
-  v <- rep(1.0, p)
-  rho <- 0.0
-  for (.i in seq_len(60)) {
-    nv <- c(sum(phi * v), v[-p])
-    m <- max(abs(nv))
-    if (m == 0) m <- 1.0
-    v <- nv / m
-    rho <- m
+  # Two seeds (all-ones and alternating +-1), max of the two: a single seed can
+  # be an eigenvector of a non-dominant root and miss the true radius
+  # (phi = c(3, -2, 0, 0, 0) read 1 instead of 2; skaters#232/#235).
+  best <- 0.0
+  for (seed in list(rep(1.0, p), (-1.0)^(seq_len(p) - 1L))) {
+    v <- seed
+    rho <- 0.0
+    for (.i in seq_len(60)) {
+      nv <- c(sum(phi * v), v[-p])
+      m <- max(abs(nv))
+      if (m == 0) m <- 1.0
+      v <- nv / m
+      rho <- m
+    }
+    best <- max(best, rho)
   }
-  rho
+  best
 }
 
 # Damp AR coefficients into the stationary region for forecasting.
@@ -575,27 +674,36 @@ ar <- function(order = 2L, lam = 0.99, ridge = 1.0, decay = 0.0) {
   }
   forward <- function(y, tstate = NULL) {
     if (is.null(tstate)) {
-      tstate <- list(buffer = numeric(0), phi = numeric(p), P = init_P(), n = 0)
+      tstate <- list(buffer = numeric(0), phi = numeric(p), phi_used = numeric(p), P = init_P(), n = 0)
     }
     st <- tstate
+    if (is.null(st$phi_used)) {
+      # a state from before skaters#232/#235 carries only the raw coefficients
+      st$phi_used <- .ar_stationary(st$phi)
+    }
     st$n <- st$n + 1
     buf <- st$buffer
     if (length(buf) >= p) {
       x <- buf[seq(length(buf), by = -1L, length.out = p)]
-      prediction <- sum(st$phi * x)
-      residual <- y - prediction
+      # the residual EMITTED (and inverse_k's forecast) uses the stationarity-
+      # projected coefficients from the end of the previous tick (skaters#232);
+      # the RLS keeps fitting the raw problem with its own prediction error
+      residual <- y - sum(st$phi_used * x)
+      raw_residual <- y - sum(st$phi * x)
       P <- st$P
       Px <- .rls_mat_vec(P, x, p)
       denom <- lam + sum(x * Px)
       if (abs(denom) > 1e-15) {
         K <- Px / denom
-        st$phi <- st$phi + K * residual
+        st$phi <- st$phi + K * raw_residual
         P <- (P - K %o% Px) / lam
         if (!all(is.finite(P)) || max(abs(P)) > 1e10) {
           P <- init_P()
         }
         st$P <- P
       }
+      # re-project after every update so the next emission and inverse_k agree
+      st$phi_used <- .ar_stationary(st$phi)
     } else {
       residual <- y
     }
@@ -608,9 +716,9 @@ ar <- function(order = 2L, lam = 0.99, ridge = 1.0, decay = 0.0) {
   }
   inverse_k <- function(dists, tstate) {
     buf <- tstate$buffer
-    # Constrain to stationarity: an online fit from few warm-up points can land
-    # on an explosive root whose multi-step forecast diverges.
-    phi <- .ar_stationary(tstate$phi)
+    # The same stationarity-projected coefficients forward() emitted residuals
+    # under (skaters#232); a pre-#235 state has no cache yet, so derive it.
+    phi <- if (!is.null(tstate$phi_used)) tstate$phi_used else .ar_stationary(tstate$phi)
     k <- length(dists)
     # Impulse responses psi_0..psi_{k-1}: psi_0 = 1, psi_i = sum_j phi_j psi_{i-j}.
     # The h-step variance is sigma^2 * sum_{i<=h} psi_i^2, NOT a recursion on the
@@ -628,7 +736,6 @@ ar <- function(order = 2L, lam = 0.99, ridge = 1.0, decay = 0.0) {
     }
     recovered_means <- numeric(k)
     out <- vector("list", k)
-    cum_psi2 <- 0.0
     for (h in seq_len(k)) {
       ar_mean <- 0.0
       for (j in seq_len(p)) {
@@ -644,8 +751,12 @@ ar <- function(order = 2L, lam = 0.99, ridge = 1.0, decay = 0.0) {
       }
       d <- dists[[h]]
       total_mean <- dist_mean(d) + ar_mean
-      cum_psi2 <- cum_psi2 + psi[h] * psi[h]
-      total_var <- cum_psi2 * dist_var(d)
+      # Var(y_{t+h+1}) = sum_i psi_{h-i}^2 var_i: each future innovation enters
+      # with its own variance (skaters#245); plain accumulation in this order.
+      total_var <- 0.0
+      for (i in seq_len(h)) {
+        total_var <- total_var + psi[h - i + 1] * psi[h - i + 1] * dist_var(dists[[i]])
+      }
       total_std <- if (total_var > 0) sqrt(total_var) else max(dist_std(d), 1e-12)
       recovered_means[h] <- total_mean
       out[[h]] <- dist_gaussian(total_mean, total_std)
@@ -689,27 +800,35 @@ grouped_ar <- function(max_lag = 16L, lam = 0.99, ridge = 1.0) {
   }
   forward <- function(y, tstate = NULL) {
     if (is.null(tstate)) {
-      tstate <- list(buffer = numeric(0), theta = numeric(n_groups), P = init_P(), n = 0)
+      tstate <- list(buffer = numeric(0), theta = numeric(n_groups), phi_used = numeric(max_lag),
+                     P = init_P(), n = 0)
     }
     st <- tstate
+    if (is.null(st$phi_used)) {
+      st$phi_used <- .ar_stationary(st$theta[groups])
+    }
     st$n <- st$n + 1
     buf <- st$buffer
     if (length(buf) >= max_lag) {
       x <- group_regressor(buf)
-      prediction <- sum(st$theta * x)
-      residual <- y - prediction
+      # emitted residual under the previous tick's projected per-lag coefficients
+      # (skaters#232); the RLS fits the raw grouped problem with its own error
+      lag_x <- buf[seq(length(buf), by = -1L, length.out = max_lag)]
+      residual <- y - sum(st$phi_used * lag_x)
+      raw_residual <- y - sum(st$theta * x)
       P <- st$P
       Px <- .rls_mat_vec(P, x, n_groups)
       denom <- lam + sum(x * Px)
       if (abs(denom) > 1e-15) {
         K <- Px / denom
-        st$theta <- st$theta + K * residual
+        st$theta <- st$theta + K * raw_residual
         P <- (P - K %o% Px) / lam
         if (!all(is.finite(P)) || max(abs(P)) > 1e10) {
           P <- init_P()
         }
         st$P <- P
       }
+      st$phi_used <- .ar_stationary(st$theta[groups])
     } else {
       residual <- y
     }
@@ -724,7 +843,7 @@ grouped_ar <- function(max_lag = 16L, lam = 0.99, ridge = 1.0) {
     buf <- tstate$buffer
     # Expand group coefficients to per-lag, then constrain to stationarity for a
     # well-posed forecast (same as ar(); grouped AR is AR-family).
-    phi <- .ar_stationary(tstate$theta[groups])
+    phi <- if (!is.null(tstate$phi_used)) tstate$phi_used else .ar_stationary(tstate$theta[groups])
     k <- length(dists)
     # Impulse responses, as in ar(): the h-step variance is
     # sigma^2 * sum_{i<=h} psi_i^2, not a recursion on recovered variances.
@@ -740,7 +859,6 @@ grouped_ar <- function(max_lag = 16L, lam = 0.99, ridge = 1.0) {
     }
     recovered_means <- numeric(k)
     out <- vector("list", k)
-    cum_psi2 <- 0.0
     for (h in seq_len(k)) {
       ar_mean <- 0.0
       for (j in seq_len(max_lag)) {
@@ -756,8 +874,12 @@ grouped_ar <- function(max_lag = 16L, lam = 0.99, ridge = 1.0) {
       }
       d <- dists[[h]]
       total_mean <- dist_mean(d) + ar_mean
-      cum_psi2 <- cum_psi2 + psi[h] * psi[h]
-      total_var <- cum_psi2 * dist_var(d)
+      # Var(y_{t+h+1}) = sum_i psi_{h-i}^2 var_i: each future innovation enters
+      # with its own variance (skaters#245); plain accumulation in this order.
+      total_var <- 0.0
+      for (i in seq_len(h)) {
+        total_var <- total_var + psi[h - i + 1] * psi[h - i + 1] * dist_var(dists[[i]])
+      }
       total_std <- if (total_var > 0) sqrt(total_var) else max(dist_std(d), 1e-12)
       recovered_means[h] <- total_mean
       out[[h]] <- dist_gaussian(total_mean, total_std)
