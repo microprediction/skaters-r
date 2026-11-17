@@ -112,53 +112,138 @@ dist_crps <- function(d, x) {
   t1 - 0.5 * t2
 }
 
-dist_quantile <- function(d, p, tol = 1e-9, max_iter = 100L) {
+# One mixture CDF value accumulated component by component, in component
+# order. The reference adds the terms in a plain left-to-right loop; base
+# sum() accumulates in long double where the platform has one, which can
+# differ in the last bit. The quantile's bracket checks, bisection, atom snap
+# and float-resolution comparison all use this form.
+.cdf_terms_sum <- function(w, m, s, x) {
+  total <- 0.0
+  for (v in w * pnorm(x, m, s)) {
+    total <- total + v
+  }
+  total
+}
+
+# Inverse CDF by bisection, a mirror of Dist.quantile in skaters/dist.py
+# (contract: parity/QUANTILE_CONTRACT.md there, cases in
+# inst/parity/quantile_contract.json here). The x stopping tolerance is
+# tol * min(1, smallest positive active component std). An ordinary tolerance
+# exit returns the midpoint, except that a probability inside an atom's jump
+# returns the atom exactly. At float resolution the rounded midpoint is kept
+# when 0 < tol <= 2 * gap and moving the unresolved components across the
+# adjacent pair leaves both endpoint CDFs unchanged; otherwise hi is returned.
+# The default budget spans the binary64 exponent range; a smaller explicit
+# max_iter can still return an unconverged midpoint.
+dist_quantile <- function(d, p, tol = 1e-9, max_iter = 2100L) {
   if (isTRUE(d$mixture)) {
     return(mixture_quantile(d, p))
   }
   if (isTRUE(d$spliced)) {
     return(spliced_quantile(d, p, tol = tol, max_iter = max_iter))
   }
-  stopifnot(p > 0, p < 1)
+  if (!isTRUE(p > 0 && p < 1)) {
+    stop(sprintf("quantile needs 0 < p < 1, got %s", format(p)))
+  }
+  w <- d$w
+  m <- d$m
+  s <- d$s
+  cdf <- function(x) .cdf_terms_sum(w, m, s, x)
   mu <- dist_mean(d)
   sigma <- sqrt(dist_var(d))
+  if (!is.finite(sigma)) {
+    stop("quantile needs a finite mixture variance")
+  }
+  active <- s[w > 0 & s > 0]
+  scale <- if (length(active) > 0) min(active) else 1.0
+  x_tol <- tol * min(1.0, scale)
   lo <- mu - 8 * sigma
   hi <- mu + 8 * sigma
-  # Expand the mu +- 8 sigma bracket geometrically until it contains p (a small
-  # far component can put the quantile outside it); never fires when the
-  # original bracket sufficed, so ordinary results are unchanged (skaters 21f1de5).
-  width <- max(16 * sigma, 1e-12)
+  # Geometric expansion of the moment bracket. The location-scaled seed also
+  # moves a collapsed bracket at large-magnitude atoms. Strictly below p
+  # avoids excluding an earlier solution on a CDF plateau.
+  seed <- max(16 * sigma, 1e-12 * max(1.0, abs(mu)))
+  width <- seed
   ok <- FALSE
   for (i in seq_len(120)) {
-    if (dist_cdf(d, lo) <= p) {
+    if (cdf(lo) < p) {
       ok <- TRUE
       break
     }
     lo <- lo - width
     width <- width * 2.0
   }
-  if (!ok) stop(sprintf("could not bracket quantile p=%g from below", p))
-  width <- max(16 * sigma, 1e-12)
+  if (!ok) stop(sprintf("could not bracket quantile p=%s from below", format(p)))
+  width <- seed
   ok <- FALSE
   for (i in seq_len(120)) {
-    if (dist_cdf(d, hi) >= p) {
+    if (cdf(hi) >= p) {
       ok <- TRUE
       break
     }
     hi <- hi + width
     width <- width * 2.0
   }
-  if (!ok) stop(sprintf("could not bracket quantile p=%g from above", p))
+  if (!ok) stop(sprintf("could not bracket quantile p=%s from above", format(p)))
+  if (!(is.finite(lo) && is.finite(hi))) {
+    stop("quantile needs a finite search bracket")
+  }
+  n <- length(w)
   for (i in seq_len(max_iter)) {
     mid <- 0.5 * (lo + hi)
-    if (dist_cdf(d, mid) < p) {
+    if (!is.finite(mid)) {
+      mid <- 0.5 * lo + 0.5 * hi
+    }
+    if (!(lo < mid && mid < hi)) {
+      # The reference before this contract may have stopped on this adjacent
+      # pair when its width first fell below tol. Keep that rounded midpoint
+      # only if unresolved components do not change either endpoint CDF when
+      # moved across the pair. No weight cutoff is used.
+      gap <- hi - lo
+      if (0 < tol && tol <= 2 * gap) {
+        lower <- 0.0
+        upper <- 0.0
+        swapped_lower <- 0.0
+        swapped_upper <- 0.0
+        for (j in seq_len(n)) {
+          cl <- w[j] * pnorm(lo, m[j], s[j])
+          cu <- w[j] * pnorm(hi, m[j], s[j])
+          lower <- lower + cl
+          upper <- upper + cu
+          unresolved <- w[j] > 0 && s[j] <= gap
+          swapped_lower <- swapped_lower + (if (unresolved) cu else cl)
+          swapped_upper <- swapped_upper + (if (unresolved) cl else cu)
+        }
+        if (swapped_lower == lower && swapped_upper == upper) {
+          return(mid)
+        }
+      }
+      return(hi)
+    }
+    if (cdf(mid) < p) {
       lo <- mid
     } else {
       hi <- mid
     }
-    if (hi - lo < tol) break
+    if (hi - lo < x_tol) {
+      # A midpoint just below an atom has the wrong CDF even if its x error
+      # is tiny. Snap only when p is inside the atom's jump.
+      for (j in seq_len(n)) {
+        if (w[j] > 0 && s[j] == 0 && lo <= m[j] && m[j] <= hi) {
+          left <- 0.0
+          for (k in seq_len(n)) {
+            left <- left + w[k] * (if (s[k] == 0) as.numeric(m[k] < m[j]) else pnorm(m[j], m[k], s[k]))
+          }
+          if (left < p && p <= cdf(m[j])) {
+            return(m[j])
+          }
+        }
+      }
+      break
+    }
   }
-  0.5 * (lo + hi)
+  mid <- 0.5 * (lo + hi)
+  if (is.finite(mid)) mid else 0.5 * lo + 0.5 * hi
 }
 
 dist_shift <- function(d, delta) dist_new(d$w, d$m + delta, d$s)

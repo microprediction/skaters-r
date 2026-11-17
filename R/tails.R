@@ -188,7 +188,7 @@ spliced_logpdf <- function(d, x) {
   base + corr
 }
 
-spliced_quantile <- function(d, p, tol = 1e-9, max_iter = 100L) {
+spliced_quantile <- function(d, p, tol = 1e-9, max_iter = 2100L) {
   stopifnot(p > 0, p < 1)
   if (p < d$zeta_lo) {
     z <- d$t_lo - .gpd_isf(p / d$zeta_lo, d$g_lo, d$s_lo)

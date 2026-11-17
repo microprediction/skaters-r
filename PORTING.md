@@ -42,9 +42,19 @@ it exists to keep platforms in agreement); the composition comes last and
 is then covered by the `pol_laplace` scenarios in the same vectors file.
 
 Parity vectors provenance: inst/parity/vectors.json is copied from
-microprediction/skaters at commit 9cb5d1c (parity/vectors.json there);
-refresh by rerunning parity/gen_vectors.py in that repository and
-copying the output here.
+microprediction/skaters at commit 38ddfa9, the merge of
+microprediction/skaters#365 (parity/vectors.json there); refresh by
+rerunning parity/gen_vectors.py in that repository and copying the
+output here.
+
+Quantile contract: inst/parity/quantile_contract.json is copied unchanged
+from the same commit (parity/quantile_contract.json there, described in
+parity/QUANTILE_CONTRACT.md). It holds 64 inverse-CDF cases shared with
+the Python, JavaScript and Rust runners, and
+tests/testthat/test-quantile-contract.R runs them against `dist_quantile`
+with the fixture's `atol`. `dist_quantile` and `spliced_quantile` default
+to `max_iter = 2100` as the reference does. The granger mixture quantile
+keeps its own bisection and budget.
 
 Release channels: R-universe from day one (automatic builds per push once
 the repo is registered), CRAN manually when the surface stabilizes. CRAN
