@@ -42,8 +42,8 @@ it exists to keep platforms in agreement); the composition comes last and
 is then covered by the `pol_laplace` scenarios in the same vectors file.
 
 Parity vectors provenance: inst/parity/vectors.json is copied from
-microprediction/skaters at commit f2b0c97 on the branch
-`quantile-scale-all-ports` (parity/vectors.json there); refresh by
+microprediction/skaters at commit 38ddfa9, the merge of
+microprediction/skaters#365 (parity/vectors.json there); refresh by
 rerunning parity/gen_vectors.py in that repository and copying the
 output here.
 
