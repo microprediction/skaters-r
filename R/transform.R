@@ -298,7 +298,8 @@ garch <- function(omega = 0.01, alpha = 0.1, beta = 0.85, mean_alpha = 0.05,
     return(spliced_new(.widen(d$body, delta, add), d$t_lo, d$t_up, d$zeta_lo, d$zeta_up,
                        d$g_lo, d$s_lo, d$g_up, d$s_up))
   }
-  dist_new(d$w, d$m + delta, sqrt(d$s * d$s + add))
+  cm <- dist_components(d)
+  dist_new(cm$w, cm$m + delta, sqrt(cm$s * cm$s + add))
 }
 
 seasonal_difference <- function(period = 12L) {
@@ -442,7 +443,81 @@ seasonal_anchor <- function(period, alpha = 0.2, weight = 0.5) {
   list(forward = forward, inverse_k = inverse_k)
 }
 
-power_transform <- function(p = 0.5) {
+# Phase-indexed running standardization (seasonal heteroskedasticity).
+#
+# Forward:   y'_t = (y_t - mu_{p(t)}) / sigma_{p(t)},   p(t) = t mod period
+# Inverse:   affine by the stats of the phase being forecast: dists[h] is the
+#            h-step-ahead predictive, so its phase is (n + h - 1) mod period
+#            where n counts observations seen.
+#
+# Each phase keeps its own EWMA mean and variance. center = FALSE divides by
+# the phase sigma without subtracting the phase mean; compose it over
+# seasonal_difference(period). A phase's variance is shrunk toward the global
+# EWMA variance in log space by visit count, w = visits / (visits + 3). The
+# global stats run at alpha / period.
+seasonal_scale <- function(period, alpha = 0.05, center = FALSE, eps = 1e-8) {
+  stopifnot(period >= 1, alpha > 0, alpha < 1)
+  force(center)
+  force(eps)
+  a_g <- alpha / period
+  K0 <- 3.0 # shrinkage prior strength (visits)
+
+  # Bias-corrected global variance (the slow EWMA starts at zero).
+  vg_of <- function(st) {
+    updates <- st$n - 1
+    if (updates <= 0) {
+      return(0.0)
+    }
+    st$var_g / (1.0 - (1.0 - a_g)^updates)
+  }
+  # Shrunk (mu, sigma) for 0-based phase p.
+  phase_stats <- function(st, p) {
+    w <- st$vis[p + 1] / (st$vis[p + 1] + K0)
+    vp <- max(st$var[p + 1], eps * eps)
+    vg <- max(vg_of(st), eps * eps)
+    var_eff <- exp(w * log(vp) + (1.0 - w) * log(vg))
+    mu_eff <- if (center) (w * st$mu[p + 1] + (1.0 - w) * st$mu_g) else 0.0
+    c(mu_eff, sqrt(var_eff))
+  }
+  forward <- function(y, tstate = NULL) {
+    if (is.null(tstate)) {
+      return(list(y = 0.0, state = list(
+        mu_g = y, var_g = 0.0, mu = numeric(period), var = numeric(period),
+        vis = integer(period), n = 1L
+      )))
+    }
+    st <- tstate
+    p <- st$n %% period
+    # Center against the prior mean, scale by the updated variance.
+    mu_eff <- phase_stats(st, p)[1]
+    dg <- y - st$mu_g
+    st$mu_g <- st$mu_g + a_g * dg
+    st$var_g <- (1 - a_g) * st$var_g + a_g * dg * dg
+    if (st$vis[p + 1] == 0) { # first visit seeds from global stats
+      st$mu[p + 1] <- y
+      st$var[p + 1] <- vg_of(st)
+    } else {
+      dp <- y - st$mu[p + 1]
+      st$mu[p + 1] <- st$mu[p + 1] + alpha * dp
+      st$var[p + 1] <- (1 - alpha) * st$var[p + 1] + alpha * dp * dp
+    }
+    st$vis[p + 1] <- st$vis[p + 1] + 1L
+    st$n <- st$n + 1L
+    sigma <- phase_stats(st, p)[2]
+    list(y = (y - mu_eff) / sigma, state = st)
+  }
+  inverse_k <- function(dists, tstate) {
+    out <- vector("list", length(dists))
+    for (h in seq_along(dists)) {
+      ms <- phase_stats(tstate, (tstate$n + h - 1) %% period)
+      out[[h]] <- dist_affine(dists[[h]], ms[2], ms[1])
+    }
+    out
+  }
+  list(forward = forward, inverse_k = inverse_k)
+}
+
+power_transform <- function(p = 0.5, exact = FALSE) {
   stopifnot(p > 0, p < 1)
   inv_p <- 1.0 / p
   pw_fwd <- function(y) if (y < 0) -abs(y)^p else abs(y)^p
@@ -453,9 +528,9 @@ power_transform <- function(p = 0.5) {
   inverse_k <- function(dists, tstate) {
     out <- vector("list", length(dists))
     for (i in seq_along(dists)) {
-      d <- dists[[i]]
-      if (isTRUE(d$spliced)) { # tail-spliced: exact pushforward
-        out[[i]] <- .pushforward(d, pw_inv)
+      d <- dist_components(dists[[i]])
+      if (is.null(d)) { # tail-spliced: exact pushforward
+        out[[i]] <- .pushforward(dists[[i]], pw_inv)
         next
       }
       n <- length(d$w)
@@ -474,10 +549,10 @@ power_transform <- function(p = 0.5) {
     }
     out
   }
-  list(forward = forward, inverse_k = inverse_k)
+  list(forward = forward, inverse_k = if (exact) .exact_inverse_k(pw_inv) else inverse_k)
 }
 
-yeo_johnson <- function(lmbda = 0.0) {
+yeo_johnson <- function(lmbda = 0.0, exact = FALSE) {
   L <- as.numeric(lmbda)
   yj_fwd <- function(y) {
     if (y >= 0.0) {
@@ -525,9 +600,9 @@ yeo_johnson <- function(lmbda = 0.0) {
   inverse_k <- function(dists, tstate) {
     out <- vector("list", length(dists))
     for (i in seq_along(dists)) {
-      d <- dists[[i]]
-      if (isTRUE(d$spliced)) { # tail-spliced: exact pushforward
-        out[[i]] <- .pushforward(d, yj_inv)
+      d <- dist_components(dists[[i]])
+      if (is.null(d)) { # tail-spliced: exact pushforward
+        out[[i]] <- .pushforward(dists[[i]], yj_inv)
         next
       }
       m_out <- vapply(d$m, yj_inv, 0.0)
@@ -535,6 +610,97 @@ yeo_johnson <- function(lmbda = 0.0) {
       out[[i]] <- dist_new(d$w, m_out, s_out)
     }
     out
+  }
+  list(forward = forward, inverse_k = if (exact) .exact_inverse_k(yj_inv) else inverse_k)
+}
+
+# Log coordinate for a series with a one-sided bound.
+#
+# Forward:   y' = log(y - lower)        (lower bound; the default, lower = 0)
+#            y' = -log(upper - y)       (upper bound)
+# Inverse:   the exact pushforward through the inverse map, so the predictive
+#            in y keeps the skew of the coordinate change, its logpdf includes
+#            the Jacobian, and every quantile lies on the right side of the
+#            bound.
+#
+# A finite observation on or past the bound is an error. Missing observations
+# pass through. Quantiles that round to the bound are rounded inward by one
+# floating-point step. Experimental, alongside flesaker.
+log_transform <- function(lower = NULL, upper = NULL) {
+  if (!is.null(lower) && !is.null(upper)) {
+    stop("log_transform takes one bound: lower or upper")
+  }
+  b <- as.numeric(if (!is.null(upper)) upper else if (is.null(lower)) 0.0 else lower)
+  if (!is.finite(b)) {
+    stop("log_transform needs a finite bound")
+  }
+  direction <- if (!is.null(upper)) -1.0 else 1.0
+  bound_label <- if (!is.null(upper)) "upper" else "lower"
+  log_two <- log(2.0)
+
+  fwd_query <- function(y) {
+    gap <- direction * (y - b)
+    if (gap <= 0.0) {
+      return(-direction * Inf)
+    }
+    if (is.infinite(gap)) {
+      # A gap between finite floats can overflow even when its log fits.
+      half_gap <- direction * (0.5 * y - 0.5 * b)
+      return(direction * (log(half_gap) + log_two))
+    }
+    direction * log(gap)
+  }
+  inverse_at_scale <- function(z, weight) {
+    bound <- weight * b
+    log_gap <- direction * z + log(weight)
+    gap <- exp(log_gap)
+    if (is.infinite(gap)) {
+      # The shift by the bound can bring an overflowing gap into range.
+      return(2.0 * (0.5 * bound + direction * exp(log_gap - log_two)))
+    }
+    bound + direction * gap
+  }
+  lt_inv <- function(z) {
+    y <- inverse_at_scale(z, 1.0)
+    if (isTRUE(y == b)) .pf_nextafter(b, direction) else y
+  }
+  log_jacobian <- function(z) -direction * z
+  moments <- function(m, s) {
+    variance <- s * s
+    log_mean_gap <- direction * m + 0.5 * variance
+    mean <- inverse_at_scale(direction * log_mean_gap, 1.0)
+    if (s == 0.0) {
+      return(c(mean, 0.0))
+    }
+    # log(sqrt(expm1(s^2))) stays stable as the spread approaches zero or
+    # grows large, where the correction to s^2 / 2 rounds to zero.
+    log_relative_std <- if (variance < 1e-16) {
+      log(s)
+    } else if (variance > 40.0) {
+      0.5 * variance
+    } else {
+      0.5 * log(expm1(variance))
+    }
+    c(mean, exp(log_mean_gap + log_relative_std))
+  }
+  forward <- function(y, tstate = NULL) {
+    st <- if (is.null(tstate)) list() else tstate
+    if (!is.finite(y)) {
+      return(list(y = y, state = st))
+    }
+    z <- fwd_query(y)
+    if (z == -direction * Inf) {
+      stop(sprintf("log_transform: observation %s must lie inside %s=%s", format(y), bound_label, format(b)))
+    }
+    list(y = z, state = st)
+  }
+  inverse_k <- function(dists, tstate) {
+    lapply(dists, function(d) {
+      pushforward_new(d,
+        inv_fn = lt_inv, fwd_fn = fwd_query, log_jacobian_fn = log_jacobian,
+        component_moments_fn = moments, scaled_inv_fn = inverse_at_scale
+      )
+    })
   }
   list(forward = forward, inverse_k = inverse_k)
 }
@@ -904,6 +1070,383 @@ grouped_ar <- function(max_lag = 16L, lam = 0.99, ridge = 1.0) {
       total_std <- if (total_var > 0) sqrt(total_var) else max(dist_std(d), 1e-12)
       recovered_means[h] <- total_mean
       out[[h]] <- dist_gaussian(total_mean, total_std)
+    }
+    out
+  }
+  list(forward = forward, inverse_k = inverse_k)
+}
+
+# --- Gaussianize: probit of the smoothed fence-post empirical CDF ---
+#
+# z = Phi^{-1}(F_hat(y)) with fence-post weights, F_hat built from the sorted
+# past inputs at most max_knots equal-mass centers. smooth = FALSE
+# interpolates the fence-post empirical CDF linearly; smooth = TRUE uses a
+# Gaussian-kernel CDF (Silverman bandwidth) through a monotone C^1 cubic
+# (Fritsch-Butland tangents). Knot-segment slopes are guarded at slope_cap
+# times the interquartile slope (guard "move" caps, "delete" prunes, "emin"
+# projects into the smallest rank corridor) and the forward output is clamped
+# to |z| <= z_max. The inverse maps each component through an equal-probability
+# particle approximation (n_particles local Gaussians) and prunes to 12; a
+# tail-spliced predictive gets the exact pushforward. Before warmup
+# observations the transform standardizes by expanding moments.
+gaussianize <- function(max_knots = 39L, warmup = 30L, n_particles = 9L, smooth = FALSE,
+                        slope_cap = 20.0, z_max = 8.0, guard = "move") {
+  force(max_knots)
+  force(warmup)
+  force(smooth)
+  force(guard)
+  SLOPE_CAP <- slope_cap
+  Z_MAX <- z_max
+  SQ2 <- sqrt(2.0)
+  J <- as.integer(n_particles)
+  mids <- qnorm(((0:(J - 1)) + 0.5) / J)
+  edges <- if (J > 1) qnorm((1:(J - 1)) / J) else numeric(0)
+  .erf <- function(x) 2.0 * pnorm(x * SQ2) - 1.0
+
+  # Cap reference: SLOPE_CAP times the interquartile inverse slope, or NULL.
+  slope_ref <- function(ys, zs) {
+    K <- length(ys)
+    i1 <- K %/% 4
+    i3 <- (3 * K) %/% 4
+    if (i3 <= i1 || zs[i3 + 1] <= zs[i1 + 1]) {
+      return(NULL)
+    }
+    cap <- SLOPE_CAP * (ys[i3 + 1] - ys[i1 + 1]) / (zs[i3 + 1] - zs[i1 + 1])
+    if (cap <= 0) NULL else cap
+  }
+
+  # Delete knots whose segment slope exceeds the cap, walking outward from the
+  # median knot.
+  prune_slopes <- function(ys, zs) {
+    cap <- slope_ref(ys, zs)
+    if (is.null(cap)) {
+      return(list(ys, zs))
+    }
+    K <- length(ys)
+    c0 <- K %/% 2 # 0-based
+    keep <- c0
+    if (c0 + 1 <= K - 1) {
+      for (i in (c0 + 1):(K - 1)) {
+        j <- keep[length(keep)]
+        if ((ys[i + 1] - ys[j + 1]) / (zs[i + 1] - zs[j + 1]) <= cap) keep <- c(keep, i)
+      }
+    }
+    if (c0 - 1 >= 0) {
+      for (i in (c0 - 1):0) {
+        j <- min(keep)
+        if ((ys[j + 1] - ys[i + 1]) / (zs[j + 1] - zs[i + 1]) <= cap) keep <- c(keep, i)
+      }
+    }
+    keep <- sort(keep)
+    if (length(keep) < 2) {
+      return(list(ys, zs))
+    }
+    list(ys[keep + 1], zs[keep + 1])
+  }
+
+  # Smallest-rank-displacement guard.
+  emin_knots <- function(buf, ys, zs, idxs) {
+    cap <- slope_ref(ys, zs)
+    if (is.null(cap)) {
+      return(list(ys, zs))
+    }
+    nb <- length(buf)
+    K <- length(ys)
+    dz <- diff(zs)
+    corridor <- function(e) {
+      lo <- buf[pmax(0, idxs - e) + 1]
+      hi <- buf[pmin(nb - 1, idxs + e) + 1]
+      U <- numeric(K)
+      U[K] <- hi[K]
+      Db <- numeric(K)
+      Db[K] <- lo[K]
+      if (K >= 2) {
+        for (j in (K - 1):1) {
+          U[j] <- min(hi[j], U[j + 1])
+          Db[j] <- max(lo[j], Db[j + 1] - cap * dz[j])
+        }
+      }
+      Lw <- numeric(K)
+      Lw[1] <- Db[1]
+      if (K >= 2) {
+        for (j in 2:K) Lw[j] <- max(Db[j], Lw[j - 1])
+      }
+      if (any(Lw > U)) {
+        return(NULL)
+      }
+      list(L = Lw, U = U)
+    }
+    if (!is.null(corridor(0))) {
+      return(list(ys, zs))
+    }
+    lo_e <- 0
+    hi_e <- nb
+    while (hi_e - lo_e > 1) {
+      mid <- (lo_e + hi_e) %/% 2
+      if (!is.null(corridor(mid))) hi_e <- mid else lo_e <- mid
+    }
+    res <- corridor(hi_e)
+    if (is.null(res)) {
+      return(list(ys, zs))
+    }
+    Lw <- res$L
+    U <- res$U
+    w <- numeric(K)
+    w[1] <- max(Lw[1], min(ys[1], U[1]))
+    if (K >= 2) {
+      for (j in 2:K) {
+        a_j <- max(Lw[j], w[j - 1])
+        b_j <- min(U[j], w[j - 1] + cap * dz[j - 1])
+        w[j] <- max(a_j, min(ys[j], b_j))
+      }
+    }
+    # drop any knot that failed to stay strictly increasing
+    ks <- w[1]
+    kz <- zs[1]
+    if (K >= 2) {
+      for (j in 2:K) {
+        if (w[j] > ks[length(ks)]) {
+          ks <- c(ks, w[j])
+          kz <- c(kz, zs[j])
+        }
+      }
+    }
+    list(ks, kz)
+  }
+
+  # Cap segment slopes, walking outward from the median knot.
+  cap_slopes <- function(ys, zs) {
+    cap <- slope_ref(ys, zs)
+    if (is.null(cap)) {
+      return(ys)
+    }
+    K <- length(ys)
+    c0 <- K %/% 2 + 1 # 1-based median knot
+    if (c0 + 1 <= K) {
+      for (i in (c0 + 1):K) ys[i] <- min(ys[i], ys[i - 1] + cap * (zs[i] - zs[i - 1]))
+    }
+    if (c0 - 1 >= 1) {
+      for (i in (c0 - 1):1) ys[i] <- max(ys[i], ys[i + 1] - cap * (zs[i + 1] - zs[i]))
+    }
+    ys
+  }
+
+  # Fritsch-Butland harmonic-mean tangents: monotone C^1 cubic.
+  tangents <- function(xs, vs) {
+    d <- diff(vs) / diff(xs)
+    n <- length(xs)
+    t <- numeric(n)
+    t[1] <- d[1]
+    if (n > 2) {
+      for (i in 2:(n - 1)) {
+        a <- d[i - 1]
+        b <- d[i]
+        t[i] <- if (a * b > 0) 2.0 * a * b / (a + b) else 0.0
+      }
+    }
+    t[n] <- d[n - 1]
+    t
+  }
+  herm <- function(s, dx, v0, v1, t0, t1) {
+    s2 <- s * s
+    s3 <- s2 * s
+    (v0 * (2 * s3 - 3 * s2 + 1) + dx * t0 * (s3 - 2 * s2 + s) +
+      v1 * (-2 * s3 + 3 * s2) + dx * t1 * (s3 - s2))
+  }
+  herm_ds <- function(s, dx, v0, v1, t0, t1) {
+    s2 <- s * s
+    (v0 * (6 * s2 - 6 * s) + dx * t0 * (3 * s2 - 4 * s + 1) +
+      v1 * (-6 * s2 + 6 * s) + dx * t1 * (3 * s2 - 2 * s))
+  }
+
+  build <- function(buf) {
+    n <- length(buf)
+    m <- min(max_knots, n)
+    cs <- numeric(0)
+    idxs <- integer(0)
+    for (i in 0:(m - 1)) {
+      idx <- as.integer((i + 0.5) * n / m) # 0-based
+      y <- buf[idx + 1]
+      if (length(cs) && y <= cs[length(cs)]) next
+      cs <- c(cs, y)
+      idxs <- c(idxs, idx)
+    }
+    if (length(cs) < 2) {
+      return(NULL)
+    }
+    if (!smooth) {
+      zs <- qnorm((idxs + 1) / (n + 1))
+      if (guard == "delete") {
+        r <- prune_slopes(cs, zs)
+        cs <- r[[1]]
+        zs <- r[[2]]
+      } else if (guard == "emin") {
+        r <- emin_knots(buf, cs, zs, idxs)
+        cs <- r[[1]]
+        zs <- r[[2]]
+      } else {
+        cs <- cap_slopes(cs, zs)
+      }
+      return(list(cs = cs, zs = zs, ts = NULL))
+    }
+    # kernel-smoothed CDF on the sketch, Silverman bandwidth
+    mm <- length(cs)
+    i1 <- mm %/% 4
+    i3 <- (3 * mm) %/% 4
+    iqr <- cs[i3 + 1] - cs[i1 + 1]
+    mean <- sum(cs) / mm
+    sd <- sqrt(sum((cs - mean)^2) / mm)
+    scale <- if (iqr > 0) min(sd, iqr / 1.34) else sd
+    if (scale <= 0) {
+      scale <- max(abs(cs[mm] - cs[1]), 1e-8)
+    }
+    h <- max(0.9 * scale * n^-0.2, 1e-12)
+    R <- 8.0 * h
+    zs <- numeric(mm)
+    for (ci in seq_len(mm)) {
+      cc <- cs[ci]
+      lo <- sum(cs < cc - R)
+      hi <- sum(cs <= cc + R)
+      inner <- if (hi > lo) sum(0.5 * (1.0 + .erf((cc - cs[(lo + 1):hi]) / (SQ2 * h)))) else 0.0
+      f <- (lo + inner) / mm
+      zs[ci] <- qnorm((1.0 + n * f) / (n + 2.0))
+    }
+    cs2 <- cs[1]
+    zs2 <- zs[1]
+    if (mm >= 2) {
+      for (ci in 2:mm) {
+        if (zs[ci] > zs2[length(zs2)] + 1e-12) {
+          cs2 <- c(cs2, cs[ci])
+          zs2 <- c(zs2, zs[ci])
+        }
+      }
+    }
+    if (length(cs2) < 2) {
+      return(NULL)
+    }
+    cs2 <- cap_slopes(cs2, zs2)
+    list(cs = cs2, zs = zs2, ts = tangents(cs2, zs2))
+  }
+
+  g_fwd <- function(y, knots) {
+    cs <- knots$cs
+    zs <- knots$zs
+    ts <- knots$ts
+    K <- length(cs)
+    if (y <= cs[1]) {
+      s0 <- if (!is.null(ts)) ts[1] else (zs[2] - zs[1]) / (cs[2] - cs[1])
+      return(zs[1] + s0 * (y - cs[1]))
+    }
+    if (y >= cs[K]) {
+      s1 <- if (!is.null(ts)) ts[K] else (zs[K] - zs[K - 1]) / (cs[K] - cs[K - 1])
+      return(zs[K] + s1 * (y - cs[K]))
+    }
+    i <- sum(cs <= y) # bisect_right - 1, as a 1-based index
+    if (is.null(ts)) {
+      return(zs[i] + (zs[i + 1] - zs[i]) * (y - cs[i]) / (cs[i + 1] - cs[i]))
+    }
+    dx <- cs[i + 1] - cs[i]
+    herm((y - cs[i]) / dx, dx, zs[i], zs[i + 1], ts[i], ts[i + 1])
+  }
+
+  g_inv <- function(z, knots) {
+    cs <- knots$cs
+    zs <- knots$zs
+    ts <- knots$ts
+    K <- length(cs)
+    if (z <= zs[1]) {
+      s0 <- if (!is.null(ts)) ts[1] else (zs[2] - zs[1]) / (cs[2] - cs[1])
+      return(cs[1] + (z - zs[1]) / max(s0, 1e-12))
+    }
+    if (z >= zs[K]) {
+      s1 <- if (!is.null(ts)) ts[K] else (zs[K] - zs[K - 1]) / (cs[K] - cs[K - 1])
+      return(cs[K] + (z - zs[K]) / max(s1, 1e-12))
+    }
+    i <- sum(zs <= z)
+    if (is.null(ts)) {
+      return(cs[i] + (cs[i + 1] - cs[i]) * (z - zs[i]) / (zs[i + 1] - zs[i]))
+    }
+    dx <- cs[i + 1] - cs[i]
+    s <- (z - zs[i]) / (zs[i + 1] - zs[i])
+    for (it in 1:6) {
+      dd <- herm_ds(s, dx, zs[i], zs[i + 1], ts[i], ts[i + 1])
+      if (dd <= 1e-14) break
+      s <- s - (herm(s, dx, zs[i], zs[i + 1], ts[i], ts[i + 1]) - z) / dd
+      s <- if (s < 0.0) 0.0 else if (s > 1.0) 1.0 else s
+    }
+    cs[i] + s * dx
+  }
+
+  g_moments <- function(st) {
+    var <- if (st$n > 2) st$m2 / (st$n - 1) else 0.0
+    c(st$mu, if (var > 0) sqrt(var) else 1e-8)
+  }
+
+  forward <- function(y, tstate = NULL) {
+    st <- if (is.null(tstate)) list(buf = numeric(0), n = 0L, mu = 0.0, m2 = 0.0, knots = NULL) else tstate
+    knots <- st$knots
+    if (!is.null(knots)) {
+      z <- g_fwd(y, knots)
+    } else {
+      ms <- g_moments(st)
+      mu <- ms[1]
+      sigma <- ms[2]
+      if (sigma <= 1e-8) {
+        # cold start: scale by the first observed deviation
+        sigma <- max(abs(y - mu), 1e-8)
+      }
+      z <- if (st$n > 0) (y - mu) / sigma else 0.0
+    }
+    z <- max(-Z_MAX, min(Z_MAX, z))
+    st$buf <- append(st$buf, y, after = sum(st$buf <= y)) # bisect.insort
+    n <- st$n + 1L
+    d0 <- y - st$mu
+    mu <- st$mu + d0 / n
+    st$m2 <- st$m2 + d0 * (y - mu)
+    st$n <- n
+    st$mu <- mu
+    st["knots"] <- list(if (n >= warmup) build(st$buf) else NULL)
+    list(y = z, state = st)
+  }
+
+  inverse_k <- function(dists, tstate) {
+    knots <- tstate$knots
+    if (is.null(knots)) {
+      ms <- g_moments(tstate)
+      return(lapply(dists, dist_affine, a = ms[2], b = ms[1]))
+    }
+    out <- vector("list", length(dists))
+    for (di in seq_along(dists)) {
+      d <- dist_components(dists[[di]])
+      if (is.null(d)) { # tail-spliced: exact pushforward
+        out[[di]] <- .pushforward(dists[[di]], function(z) g_inv(z, knots))
+        next
+      }
+      w_out <- numeric(0)
+      m_out <- numeric(0)
+      s_out <- numeric(0)
+      for (ci in seq_along(d$w)) {
+        w <- d$w[ci]
+        mu <- d$m[ci]
+        sig <- d$s[ci]
+        pts <- vapply(mids, function(q) g_inv(mu + sig * q, knots), 0.0)
+        eds <- vapply(edges, function(e) g_inv(mu + sig * e, knots), 0.0)
+        for (j in seq_len(J)) {
+          lo <- if (j > 1) eds[j - 1] else NULL
+          hi <- if (j < J) eds[j] else NULL
+          std <- if (!is.null(lo) && !is.null(hi)) {
+            (hi - lo) / 2.0
+          } else if (!is.null(hi)) {
+            hi - pts[j]
+          } else {
+            pts[j] - lo
+          }
+          w_out <- c(w_out, w / J)
+          m_out <- c(m_out, pts[j])
+          s_out <- c(s_out, max(std, 1e-9))
+        }
+      }
+      out[[di]] <- dist_prune(dist_new(w_out, m_out, s_out), 12L)
     }
     out
   }

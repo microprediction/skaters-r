@@ -1,6 +1,7 @@
 \name{laplace}
 \alias{laplace}
 \alias{build_candidates}
+\alias{flesaker}
 \title{laplace: the general forecaster}
 \description{
   The deployed default: a likelihood-weighted trunk over the candidate
@@ -9,4 +10,9 @@
   and the parade wrapper. Call as \code{f <- laplace(k)} then
   \code{r <- f(y, state)}; \code{r$dists} holds one mixture per
   horizon. Port of \code{skaters/api.py}.
+
+  \code{flesaker(k, lower, upper, ...)} is laplace for a series that
+  never crosses a known bound: it forecasts in the coordinate of
+  \code{\link{log_transform}} and maps the predictive back exactly.
+  Experimental. After Bjorn Flesaker.
 }

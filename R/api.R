@@ -211,3 +211,18 @@ laplace <- function(
   } # conditional tail fit
   parade(f, k = k) # PIT/z against the spliced predictive
 }
+
+# laplace for a series that never crosses a known bound. Experimental: an
+# example composition, not settled API. Forecasts log(y - lower) (or
+# -log(upper - y)) with laplace and maps the predictive back by the exact
+# change of variables (log_transform). The returned state is laplace's own.
+# After Bjorn Flesaker. Port of flesaker in api.py.
+flesaker <- function(k = 1L, lower = NULL, upper = NULL, ...) {
+  tr <- log_transform(lower = lower, upper = upper)
+  inner <- laplace(k = k, ...)
+  function(y, state = NULL) {
+    yp <- tr$forward(y, NULL)$y
+    r <- inner(yp, state)
+    list(dists = tr$inverse_k(r$dists, list()), state = r$state)
+  }
+}

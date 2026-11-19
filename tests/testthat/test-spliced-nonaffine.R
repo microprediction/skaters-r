@@ -1,9 +1,9 @@
 # Transforms that read mixture components, fed laplace's tail-spliced
 # predictive. Mirrors tests/test_spliced_nonaffine.py in the reference. The
-# nonlinear inverses (power_transform, yeo_johnson) emit the exact pushforward
-# of the spliced law; the k>1 widening of ema_transform, seasonal_difference
-# and seasonal_anchor widens the body and lets the splice follow it.
-# gaussianize is not yet ported to R.
+# nonlinear inverses (power_transform, yeo_johnson, gaussianize) emit the
+# exact pushforward of the spliced law; the k>1 widening of ema_transform,
+# seasonal_difference and seasonal_anchor widens the body and lets the splice
+# follow it.
 
 .sn_series <- function(n, seed = 5L) {
   set.seed(seed)
@@ -89,6 +89,7 @@ test_that("conjugated laplace runs past the splice", {
   cases <- list(
     power_transform = list(make = function() power_transform(0.5), k = 1L),
     yeo_johnson = list(make = function() yeo_johnson(0.5), k = 1L),
+    gaussianize = list(make = function() gaussianize(), k = 1L),
     ema_transform = list(make = function() ema_transform(0.05), k = 3L),
     seasonal_difference = list(make = function() seasonal_difference(2L), k = 3L),
     seasonal_anchor = list(make = function() seasonal_anchor(2L), k = 3L)

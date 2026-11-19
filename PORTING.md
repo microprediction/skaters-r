@@ -16,7 +16,8 @@ Every row below is ported. The table stays as the map of what lives where.
 | leaf | src/skaters/leaf.py::leaf | DONE |
 | difference, ema_transform | src/skaters/transform.py | DONE |
 | conjugate | src/skaters/conjugate.py | DONE |
-| remaining transforms (ar, theta, garch, seasonal, yeo-johnson, ou, frac, ...) | transform.py | DONE |
+| remaining transforms (ar, theta, garch, seasonal, seasonal_scale, yeo-johnson, log, gaussianize, ou, frac, ...) | transform.py | DONE |
+| PushforwardDist (exact change of variables) | pushforward.py | DONE |
 | scale_mixture_leaf, crps_leaf, garch_leaf | leaf.py | DONE |
 | ensembles (precision, bayesian) | ensemble.py, bayesian.py | DONE |
 | ema skater | ema.py | DONE |
@@ -25,7 +26,7 @@ Every row below is ported. The table stays as the map of what lives where.
 | multiscale | multiscale.py | DONE |
 | parade (pit/z state) | parade.py | DONE |
 | tails (GPD splice, 0.13.0 default) | tails.py | DONE |
-| laplace (the composition) | api.py | DONE |
+| laplace (the composition), flesaker | api.py | DONE |
 | adaptive search (`adaptive_search`; `search` would mask base) | search.py | DONE |
 | spec build path | spec.py | DONE |
 | periodicity detector | periodicity.py | DONE |
@@ -72,16 +73,41 @@ Spliced through component-reading transforms: the k>1 widening in
 `.widen`, a port of `_widen` in transform.py (microprediction/skaters
 commit bc67bd8). On a spliced predictive it widens the body and rebuilds
 the splice with the same thresholds, tail masses and GPD parameters. The
-nonlinear inverses of `power_transform` and `yeo_johnson` emit the exact
-pushforward of a spliced predictive, a port of the table path of
-`PushforwardDist` in pushforward.py (R/pushforward.R: `table_from_map`
-over the extreme quantiles at 1e-6 padded by their span, slope from the
-exact inverse, table quadrature CRPS, moments from the 257-point quantile
-rule). The `dist_*` queries dispatch on `pushforward = TRUE`. Mixture
-inputs take the unchanged component-wise paths. `gaussianize` and the
-`exact = TRUE` options of power_transform and yeo_johnson are not yet
-ported. tests/testthat/test-spliced-nonaffine.R mirrors
+nonlinear inverses of `power_transform`, `yeo_johnson` and `gaussianize`
+emit the exact pushforward of a predictive with no components.
+tests/testthat/test-spliced-nonaffine.R mirrors
 tests/test_spliced_nonaffine.py.
+
+Pushforward and the rest of the transform surface: R/pushforward.R is a
+full port of `PushforwardDist` (table or analytic map, the optional
+`fwd_fn`, `log_jacobian_fn`, `component_moments_fn` and `scaled_inv_fn`,
+table and quantile-rule CRPS, and the moment-matched components view).
+`dist_components` is Python's `d.components`: the mixture itself, the
+pushforward's view, or NULL for a spliced or granger predictive, and the
+component-reading transforms and `dist_combine` read through it, so a
+pushforward fed to the next transform behaves as in Python. Also ported:
+`seasonal_scale`, `log_transform`, `gaussianize` (all three guards and
+the smooth mode), the `exact` flag on `power_transform` and
+`yeo_johnson`, and `flesaker` in api.R. Python's `PushforwardDist` has no
+`shift`, `scale` or `affine`, and neither does the R port, so a
+pushforward handed to an affine inverse (standardize, gaussianize before
+warmup, seasonal_scale) fails in both.
+
+Transform parity vectors: inst/parity/transform_vectors.json is generated
+by tools/gen_transform_vectors.py against the reference source (the
+`source` field records the commit, f93d1a7 on fix/spliced-nonaffine);
+run it from this repository's root with that source on PYTHONPATH. It
+reuses the series and probes of vectors.json plus a positive series
+exp(0.3 y), and holds 53 scenarios: every new transform at k = 1 and 3,
+pushforward composition, every component-reading transform over a
+tail-spliced predictive, and flesaker. `run_transform_parity` in
+R/parity_check.R checks it at 1e-6 from tests/parity.R and
+tests/testthat/test-transform-parity.R. Four spliced scenarios
+(yeo_johnson at lambda 0 and gaussianize, k = 1 and 3) carry rtol 1e-5:
+the spliced quantile past the upper splice is the body's quantile at
+1 - 1e-12, where the body CDF is flat to its last bit, so Python itself
+pins it only to about 1e-6 in z, and an exponential map or a table window
+placed there carries that to the probes.
 
 Release channels: R-universe from day one (automatic builds per push once
 the repo is registered), CRAN manually when the surface stabilizes. CRAN
