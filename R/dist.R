@@ -246,15 +246,26 @@ dist_quantile <- function(d, p, tol = 1e-9, max_iter = 2100L) {
   if (is.finite(mid)) mid else 0.5 * lo + 0.5 * hi
 }
 
-dist_shift <- function(d, delta) dist_new(d$w, d$m + delta, d$s)
+dist_shift <- function(d, delta) {
+  if (isTRUE(d$spliced)) {
+    return(spliced_shift(d, delta))
+  }
+  dist_new(d$w, d$m + delta, d$s)
+}
 
 dist_scale <- function(d, factor) {
   stopifnot(factor != 0)
+  if (isTRUE(d$spliced)) {
+    return(spliced_scale(d, factor))
+  }
   dist_new(d$w, d$m * factor, d$s * abs(factor))
 }
 
 dist_affine <- function(d, a, b) {
   stopifnot(a != 0)
+  if (isTRUE(d$spliced)) {
+    return(spliced_affine(d, a, b))
+  }
   dist_new(d$w, a * d$m + b, abs(a) * d$s)
 }
 

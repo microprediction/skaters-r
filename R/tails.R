@@ -202,6 +202,38 @@ spliced_quantile <- function(d, p, tol = 1e-9, max_iter = 2100L) {
   dist_quantile(d$body, ub, tol = tol, max_iter = max_iter)
 }
 
+# Affine map of the spliced law. The splice lives in the body's PIT space, so
+# only the body moves; a negative multiplier swaps the tails and negates the
+# thresholds. spliced_new recomputes plo, pup and c. Port of
+# SplicedDist.affine (skaters #358).
+spliced_affine <- function(d, a, b) {
+  if (a == 0) {
+    stop("affine multiplier must be nonzero")
+  }
+  body <- dist_affine(d$body, a, b)
+  if (a > 0) {
+    return(spliced_new(body, d$t_lo, d$t_up, d$zeta_lo, d$zeta_up, d$g_lo, d$s_lo, d$g_up, d$s_up))
+  }
+  spliced_new(body, -d$t_up, -d$t_lo, d$zeta_up, d$zeta_lo, d$g_up, d$s_up, d$g_lo, d$s_lo)
+}
+
+# shift and scale are the special cases of affine, delegated to the body the
+# same way.
+spliced_shift <- function(d, delta) {
+  spliced_new(dist_shift(d$body, delta), d$t_lo, d$t_up, d$zeta_lo, d$zeta_up, d$g_lo, d$s_lo, d$g_up, d$s_up)
+}
+
+spliced_scale <- function(d, factor) {
+  if (factor == 0) {
+    stop("scale factor must be nonzero")
+  }
+  body <- dist_scale(d$body, factor)
+  if (factor > 0) {
+    return(spliced_new(body, d$t_lo, d$t_up, d$zeta_lo, d$zeta_up, d$g_lo, d$s_lo, d$g_up, d$s_up))
+  }
+  spliced_new(body, -d$t_up, -d$t_lo, d$zeta_up, d$zeta_lo, d$g_up, d$s_up, d$g_lo, d$s_lo)
+}
+
 # Numeric moments and CRPS over a fixed 65-node quantile grid (midpoint rule).
 .SPLICED_GRID_N <- 65L
 

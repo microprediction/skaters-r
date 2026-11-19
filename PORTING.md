@@ -56,6 +56,17 @@ with the fixture's `atol`. `dist_quantile` and `spliced_quantile` default
 to `max_iter = 2100` as the reference does. The granger mixture quantile
 keeps its own bisection and budget.
 
+Spliced maps: `dist_affine`, `dist_shift` and `dist_scale` dispatch on the
+spliced predictive to `spliced_affine`, `spliced_shift` and
+`spliced_scale`, ports of `SplicedDist.affine` (microprediction/skaters#358)
+and its shift and scale companions. The splice lives in the body's PIT
+space, so only the body moves; a negative multiplier swaps the tails and
+negates the thresholds. Without them, conjugating laplace with standardize,
+garch, ema_transform, ou_transform, seasonal_difference or seasonal_anchor
+failed once the
+GPD splice went live. tests/testthat/test-spliced-affine.R mirrors
+tests/test_spliced_affine.py.
+
 Release channels: R-universe from day one (automatic builds per push once
 the repo is registered), CRAN manually when the surface stabilizes. CRAN
 has no automated submission path and expects at most a release every month or
