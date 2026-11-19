@@ -316,3 +316,7 @@ adaptive_search <- function(
     list(dists = combined, state = state)
   }
 }
+
+# Python's name for adaptive_search. Masks base::search() when the package
+# is attached; base::search() still reaches the original.
+search <- function(...) adaptive_search(...)

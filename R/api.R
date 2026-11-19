@@ -226,3 +226,9 @@ flesaker <- function(k = 1L, lower = NULL, upper = NULL, ...) {
     list(dists = tr$inverse_k(r$dists, list()), state = r$state)
   }
 }
+
+# Adaptive-search skater: grow the model space online instead of fixing it.
+# Beam search over the transform grammar (expand the top performers, replay
+# recent history so new candidates join warm, prune the losers). Accepts
+# adaptive_search's arguments. Port of dantzig in api.py.
+dantzig <- function(k = 1L, ...) adaptive_search(k = k, ...)

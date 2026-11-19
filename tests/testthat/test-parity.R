@@ -6,7 +6,7 @@ test_that("parity vectors are present", {
   expect_true(file.exists(skaters_vectors_path()))
 })
 
-test_that("all 55 scenarios match the reference to 1e-6", {
+test_that("every scenario matches the reference to 1e-6", {
   skip_if_not(nzchar(skaters_vectors_path()))
   skip_if_not_installed("jsonlite")
   res <- run_parity(skaters_vectors_path(), verbose = FALSE)
