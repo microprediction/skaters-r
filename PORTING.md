@@ -27,7 +27,7 @@ Every row below is ported. The table stays as the map of what lives where.
 | parade (pit/z state) | parade.py | DONE |
 | tails (GPD splice, 0.13.0 default) | tails.py | DONE |
 | laplace (the composition), flesaker | api.py | DONE |
-| adaptive search (`adaptive_search`, and `search` as in Python, masking base::search when attached) | search.py | DONE |
+| adaptive search (`adaptive_search`: Python's `search`, renamed because `search` would mask base::search) | search.py | DONE |
 | spec build path, `build`, `to_json`, `from_json` | spec.py | DONE |
 | homogenize, homogenize_candidates, homogenized_dist (HomogenizedDist) | homogenize.py | DONE |
 | residual_transform, corrected_dist (CorrectedDist), residual_diagnostics (ResidualDiagnostics) | residual_transform.py | DONE |
@@ -127,8 +127,8 @@ Wave 2 surface: `homogenize`, `homogenize_candidates` (Python's
 `make_candidates`) and `homogenized_dist`; `residual_transform`,
 `corrected_dist` and `residual_diagnostics` (Python's class as a value:
 `residual_diagnostics_update` returns the updated one,
-`residual_diagnostics_summary` gives the summary dict); `dantzig` and
-`search`; `build`, `to_json` and `from_json`. Python's CamelCase types
+`residual_diagnostics_summary` gives the summary dict); `dantzig`;
+`build`, `to_json` and `from_json`. Python's CamelCase types
 map to snake_case constructors, as `Dist` maps to `dist_new`. `to_json`
 is byte-identical to Python's compact `json.dumps`: an R integer is a
 JSON int and a double a float written as Python's repr writes it. The

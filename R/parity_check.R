@@ -411,7 +411,7 @@ wave2_parity_scenarios <- function() {
   }
   add("residual_m2_spliced", "main", 1L, residual_transform(spliced(1L), model = "m2"))
   add("dantzig", "main", 1L, dantzig(k = 1L, expand_interval = 40L))
-  add("search", "main", 1L, search(k = 1L, expand_interval = 60L, max_pool = 10L))
+  add("search", "main", 1L, adaptive_search(k = 1L, expand_interval = 60L, max_pool = 10L))
   add("standardize_over_yj_exact", "main", 1L,
       conjugate(conjugate(leaf(1L), yeo_johnson(0.0, exact = TRUE)), standardize(0.05)))
   add("seasonal_scale_over_log", "positive", 3L,
