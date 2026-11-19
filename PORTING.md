@@ -67,6 +67,22 @@ failed once the
 GPD splice went live. tests/testthat/test-spliced-affine.R mirrors
 tests/test_spliced_affine.py.
 
+Spliced through component-reading transforms: the k>1 widening in
+`ema_transform`, `seasonal_difference` and `seasonal_anchor` goes through
+`.widen`, a port of `_widen` in transform.py (microprediction/skaters
+commit bc67bd8). On a spliced predictive it widens the body and rebuilds
+the splice with the same thresholds, tail masses and GPD parameters. The
+nonlinear inverses of `power_transform` and `yeo_johnson` emit the exact
+pushforward of a spliced predictive, a port of the table path of
+`PushforwardDist` in pushforward.py (R/pushforward.R: `table_from_map`
+over the extreme quantiles at 1e-6 padded by their span, slope from the
+exact inverse, table quadrature CRPS, moments from the 257-point quantile
+rule). The `dist_*` queries dispatch on `pushforward = TRUE`. Mixture
+inputs take the unchanged component-wise paths. `gaussianize` and the
+`exact = TRUE` options of power_transform and yeo_johnson are not yet
+ported. tests/testthat/test-spliced-nonaffine.R mirrors
+tests/test_spliced_nonaffine.py.
+
 Release channels: R-universe from day one (automatic builds per push once
 the repo is registered), CRAN manually when the surface stabilizes. CRAN
 has no automated submission path and expects at most a release every month or

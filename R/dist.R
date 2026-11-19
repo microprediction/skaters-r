@@ -30,6 +30,9 @@ dist_mean <- function(d) {
   if (isTRUE(d$mixture)) {
     return(mixture_mean(d))
   }
+  if (isTRUE(d$pushforward)) {
+    return(pushforward_mean(d))
+  }
   if (isTRUE(d$spliced)) {
     return(spliced_mean(d))
   }
@@ -39,6 +42,9 @@ dist_mean <- function(d) {
 dist_var <- function(d) {
   if (isTRUE(d$mixture)) {
     return(mixture_var(d))
+  }
+  if (isTRUE(d$pushforward)) {
+    return(pushforward_var(d))
   }
   if (isTRUE(d$spliced)) {
     return(spliced_var(d))
@@ -55,6 +61,9 @@ dist_std <- function(d) {
 dist_logpdf <- function(d, x) {
   if (isTRUE(d$mixture)) {
     return(mixture_logpdf(d, x))
+  }
+  if (isTRUE(d$pushforward)) {
+    return(pushforward_logpdf(d, x))
   }
   if (isTRUE(d$spliced)) {
     return(spliced_logpdf(d, x))
@@ -82,6 +91,9 @@ dist_cdf <- function(d, x) {
   if (isTRUE(d$mixture)) {
     return(mixture_cdf(d, x))
   }
+  if (isTRUE(d$pushforward)) {
+    return(pushforward_cdf(d, x))
+  }
   if (isTRUE(d$spliced)) {
     return(spliced_cdf(d, x))
   }
@@ -98,6 +110,9 @@ dist_cdf <- function(d, x) {
 dist_crps <- function(d, x) {
   if (isTRUE(d$mixture)) {
     return(mixture_crps(d, x))
+  }
+  if (isTRUE(d$pushforward)) {
+    return(pushforward_crps(d, x))
   }
   if (isTRUE(d$spliced)) {
     return(spliced_crps(d, x))
@@ -138,6 +153,9 @@ dist_crps <- function(d, x) {
 dist_quantile <- function(d, p, tol = 1e-9, max_iter = 2100L) {
   if (isTRUE(d$mixture)) {
     return(mixture_quantile(d, p))
+  }
+  if (isTRUE(d$pushforward)) {
+    return(pushforward_quantile(d, p, tol = tol, max_iter = max_iter))
   }
   if (isTRUE(d$spliced)) {
     return(spliced_quantile(d, p, tol = tol, max_iter = max_iter))

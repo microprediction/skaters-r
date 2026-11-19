@@ -44,7 +44,7 @@ ema_transform <- function(alpha = 0.05) {
     for (h in seq_along(dists)) {
       d <- dists[[h]]
       out[[h]] <- if (add > 0.0) {
-        dist_new(d$w, d$m + level, sqrt(d$s * d$s + add))
+        .widen(d, level, add)
       } else {
         dist_shift(d, level)
       }
@@ -289,6 +289,18 @@ garch <- function(omega = 0.01, alpha = 0.1, beta = 0.85, mean_alpha = 0.05,
   list(forward = forward, inverse_k = inverse_k)
 }
 
+# Shift by delta and add independent Gaussian variance add. Exact for a
+# Gaussian mixture (each component widens). A tail-spliced predictive has no
+# components to widen, so its body widens and the GPD splice, which lives in
+# the body's PIT space, follows it. Port of _widen in transform.py.
+.widen <- function(d, delta, add) {
+  if (isTRUE(d$spliced)) {
+    return(spliced_new(.widen(d$body, delta, add), d$t_lo, d$t_up, d$zeta_lo, d$zeta_up,
+                       d$g_lo, d$s_lo, d$g_up, d$s_up))
+  }
+  dist_new(d$w, d$m + delta, sqrt(d$s * d$s + add))
+}
+
 seasonal_difference <- function(period = 12L) {
   stopifnot(period >= 1)
   forward <- function(y, tstate = NULL) {
@@ -323,7 +335,7 @@ seasonal_difference <- function(period = 12L) {
       recovered_means[h] <- dist_mean(d) + anchor_mean
       recovered_vars[h] <- dist_var(d) + anchor_var
       out[[h]] <- if (anchor_var > 0.0) {
-        dist_new(d$w, d$m + anchor_mean, sqrt(d$s * d$s + anchor_var))
+        .widen(d, anchor_mean, anchor_var)
       } else {
         dist_shift(d, anchor_mean)
       }
@@ -420,7 +432,7 @@ seasonal_anchor <- function(period, alpha = 0.2, weight = 0.5) {
       rec_resp[[h]] <- r
       ema_resp[[p + 1]] <- if (is.null(e)) r else (1.0 - alpha) * ema_resp[[p + 1]] + alpha * r
       out[[h]] <- if (a_var > 0.0) {
-        dist_new(d$w, d$m + a_mean, sqrt(d$s * d$s + a_var))
+        .widen(d, a_mean, a_var)
       } else {
         dist_shift(d, a_mean)
       }
@@ -434,6 +446,7 @@ power_transform <- function(p = 0.5) {
   stopifnot(p > 0, p < 1)
   inv_p <- 1.0 / p
   pw_fwd <- function(y) if (y < 0) -abs(y)^p else abs(y)^p
+  pw_inv <- function(z) if (z < 0) -abs(z)^inv_p else abs(z)^inv_p
   forward <- function(y, tstate = NULL) {
     list(y = pw_fwd(y), state = if (is.null(tstate)) list() else tstate)
   }
@@ -441,6 +454,10 @@ power_transform <- function(p = 0.5) {
     out <- vector("list", length(dists))
     for (i in seq_along(dists)) {
       d <- dists[[i]]
+      if (isTRUE(d$spliced)) { # tail-spliced: exact pushforward
+        out[[i]] <- .pushforward(d, pw_inv)
+        next
+      }
       n <- length(d$w)
       m_out <- numeric(n)
       s_out <- numeric(n)
@@ -509,6 +526,10 @@ yeo_johnson <- function(lmbda = 0.0) {
     out <- vector("list", length(dists))
     for (i in seq_along(dists)) {
       d <- dists[[i]]
+      if (isTRUE(d$spliced)) { # tail-spliced: exact pushforward
+        out[[i]] <- .pushforward(d, yj_inv)
+        next
+      }
       m_out <- vapply(d$m, yj_inv, 0.0)
       s_out <- pmax(d$s * vapply(d$m, yj_dinv, 0.0), 1e-12)
       out[[i]] <- dist_new(d$w, m_out, s_out)
