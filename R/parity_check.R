@@ -617,7 +617,6 @@ run_state_parity <- function(vec_path, verbose = TRUE, only = NULL, out_dir = NU
     series <- vapply(v$series[[want$series]], num, 0.0)
     sk <- scenarios[[name]]$sk
     sc_fails <- 0L
-    deep <- 0L
     for (cp in want$checkpoints) {
       st <- state_from_json(cp$state)
       for (m in seq_len(v$`continue`)) {
@@ -626,14 +625,8 @@ run_state_parity <- function(vec_path, verbose = TRUE, only = NULL, out_dir = NU
         for (h in seq_along(r$dists)) {
           got <- probe(r$dists[[h]])
           exp_ <- vapply(cp$out[[m]][[h]], num, 0.0)
-          tail_ <- .deep_tail_probe(r$dists[[h]], v$probe)
           for (j in seq_along(got)) {
             res$values_checked <- res$values_checked + 1L
-            if (tail_ && j %in% c(3L, 4L) && !close(got[j], exp_[j]) && is.finite(got[j]) &&
-                abs(got[j] - exp_[j]) <= ATOL + 1e-4 * abs(exp_[j])) {
-              deep <- deep + 1L
-              next
-            }
             if (!close(got[j], exp_[j])) {
               sc_fails <- sc_fails + 1L
               if (sc_fails <= 3) {
@@ -681,11 +674,10 @@ run_state_parity <- function(vec_path, verbose = TRUE, only = NULL, out_dir = NU
         }
       }
     }
-    res$scenarios[[name]] <- list(fails = sc_fails, deep_tail = deep)
+    res$scenarios[[name]] <- list(fails = sc_fails)
     res$fails <- res$fails + sc_fails
-    cat(sprintf("%s %-28s %s%s\n", if (sc_fails) "FAIL" else "ok  ", name,
-                if (sc_fails) paste(sc_fails, "mismatches") else "",
-                if (deep) sprintf(" (%d deep-tail logpdf/cdf probes at 1e-4)", deep) else ""))
+    cat(sprintf("%s %-28s %s\n", if (sc_fails) "FAIL" else "ok  ", name,
+                if (sc_fails) paste(sc_fails, "mismatches") else ""))
   }
   if (length(res$missing) && is.null(only)) {
     res$fails <- res$fails + length(res$missing)
@@ -694,23 +686,4 @@ run_state_parity <- function(vec_path, verbose = TRUE, only = NULL, out_dir = NU
   cat(sprintf("%d values checked\n", res$values_checked))
   cat(if (res$fails > 0L) sprintf("STATE PARITY FAILED: %d\n", res$fails) else "STATE PARITY OK\n")
   res
-}
-
-# The probe point lies where a spliced predictive's body has less than 1e-8
-# mass beyond it. There the splice's z comes from the body CDF within ~1e-12
-# of 0 or 1, which both ports resolve only to the last bit of that CDF (the
-# reference's 0.5 * (1 + erf), R's pnorm sum), so logpdf and cdf agree only
-# to about 1e-5 relative. The deep-tail quantile was fixed in the reference
-# (0ad69a5); logpdf and cdf there still read the body CDF.
-.deep_tail_probe <- function(d, x) {
-  if (!isTRUE(d$spliced)) {
-    return(FALSE)
-  }
-  cm <- dist_components(d$body)
-  if (is.null(cm)) {
-    return(FALSE)
-  }
-  lower <- sum(cm$w * pnorm((x - cm$m) / cm$s))
-  upper <- sum(cm$w * pnorm((x - cm$m) / cm$s, lower.tail = FALSE))
-  min(lower, upper) < 1e-8
 }
