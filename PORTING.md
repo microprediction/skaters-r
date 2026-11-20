@@ -32,6 +32,8 @@ Every row below is ported. The table stays as the map of what lives where.
 | homogenize, homogenize_candidates, homogenized_dist (HomogenizedDist) | homogenize.py | DONE |
 | residual_transform, corrected_dist (CorrectedDist), residual_diagnostics (ResidualDiagnostics) | residual_transform.py | DONE |
 | dantzig | api.py | DONE |
+| state_to_json, state_from_json, assert_plain_state (canonical state layout) | state.py, docs/STATE.md | DONE |
+| terminal_leaf_ensemble(adaptive_temperature = TRUE) | terminal.py | DONE |
 | mahalanobis, zbank | anomaly.py | not ported: slated for extraction (skaters#90) |
 | periodicity detector | periodicity.py | DONE |
 | covariance estimators (running, ema, ledoit_wolf) | cov/ | DONE |
@@ -143,6 +145,54 @@ residual_transform m0 to m2, dantzig, search, and pushforwards handed to
 standardize, seasonal_scale and gaussianize), the pushforward affine
 cases, a diagnostics stream and 16 specs, checked by `run_wave2_parity`
 from tests/parity.R and tests/testthat/test-wave2-parity.R at 1e-6.
+
+Canonical state (microprediction/skaters#394, docs/STATE.md there):
+`state_to_json(state)` writes an R state in the reference's layout as plain
+R data (named list = object, unnamed list = array, length-one atomic =
+scalar, NULL = null) and `state_from_json(obj)` reads it back, so a
+checkpoint written by Python, JS or R resumes in any of them;
+`assert_plain_state` checks without converting. R keeps some state in its
+own shape (a Dist is list(w, m, s), sticky keeps parallel vals and wts, AR's
+P is a matrix, multiscale's per-stride tables are positional, granger is
+horizon 1), and a length-one R vector cannot say whether it is a scalar or a
+list of one, so R/state.R recognises each state object by its field names
+and converts it by its own rule: snake_case keys as Python, decimal-string
+keys for multiscale's strides and the period detector's lags, `[value,
+weight]` pairs for sticky, queues as lists oldest first, a search pool entry
+rebuilt from its recipe, gaussianize's knots as `[cs, zs, ts]`, P flat and
+row-major. Two R states moved to
+the reference's layout: leaf keeps `var = {n, mean, m2}` and the period
+detector names `cross` by lag; R checkpoints in the old shapes are migrated
+on their next step, so saveRDS checkpoints keep resuming. Numbers: a JSON
+int reads as a double; `to_json(x, digits = 17)` writes 17 significant
+digits (integral values as integers, as JS does), and `from_json` now reads
+every number correctly rounded (R's own conversion is not, beyond 15 digits
+or a decimal exponent of 22), so a JSON checkpoint resumes bit for bit
+within R. jsonlite::parse_json(simplifyVector = FALSE) reads the same form
+faster for large states.
+
+Cross-language checkpoints: inst/parity/state_vectors.json.gz, from
+tools/gen_state_vectors.py run against skaters#394 (080668b) merged with
+0ad69a5 and bec9df0, holds 52 scenarios (every scenario of
+tests/test_state_json.py the R port carries: all transforms under
+conjugate, laplace in every mode including k = 3, gaps and the live GPD
+splice, granger, flesaker, dantzig, search, multiscale, parade, sticky,
+homogenize, residual_transform, the ensembles and leaves) with Python's
+state at t = 60, 250 and 530 where the series allows, the next 40 outputs
+and Python's state 20 ticks on. `run_state_parity` restores each, steps 20
+ticks and matches the outputs and then the state at 1e-6, puts R's state
+through JSON and checks the twin resumes bit for bit, and writes R's state
+for tools/check_r_state_in_python.py, which resumes it in Python for the
+next 20 ticks at 1e-6 (tests/testthat/test-state.R runs that when
+SKATERS_PY_SRC points at a reference checkout). One exemption: where a
+spliced predictive's body has under 1e-8 mass beyond the probe point, logpdf
+and cdf read the body CDF within 1e-12 of 0 or 1, which both ports resolve
+only to its last bit, so those probes are held to 1e-4 (2 of 25,060 values;
+the deep-tail quantile was fixed in the reference at 0ad69a5, logpdf and cdf
+were not). Not covered because R lacks them: mahalanobis, zbank and gpdtail
+(slated for extraction, skaters#90), conforming_leaf and ensemble_leaf (not
+exported by the reference). terminal_leaf_ensemble's adaptive temperature
+(skaters#213/#215) is ported for this, with its `adapt` state.
 
 Release channels: R-universe from day one (automatic builds per push once
 the repo is registered), CRAN manually when the surface stabilizes. CRAN

@@ -501,3 +501,216 @@ run_wave2_parity <- function(vec_path, verbose = TRUE) {
   cat(if (res$fails > 0L) sprintf("WAVE2 PARITY FAILED: %d\n", res$fails) else "WAVE2 PARITY OK\n")
   res
 }
+
+# Cross-language checkpoints: inst/parity/state_vectors.json.gz from
+# tools/gen_state_vectors.py. R restores each Python checkpoint, steps 20
+# ticks and must match the reference's outputs; its own state then must
+# match the reference's, field for field.
+state_parity_scenarios <- function() {
+  cj <- function(t, k = 1L) conjugate(leaf(k), t, k)
+  s <- list()
+  add <- function(name, k, sk) s[[name]] <<- list(k = k, sk = sk)
+  tr <- list(
+    difference = difference(), fractional_difference = fractional_difference(0.4, 30L),
+    standardize = standardize(), ema_transform = ema_transform(0.1), ou_transform = ou_transform(0.1),
+    theta = theta(0.1), drift = drift(0.05, 0.01), holt_linear = holt_linear(0.1, 0.05), garch = garch(),
+    seasonal_difference = seasonal_difference(7L), seasonal_anchor = seasonal_anchor(7L),
+    seasonal_scale = seasonal_scale(7L), seasonal_scale_center = seasonal_scale(7L, center = TRUE),
+    power_transform = power_transform(0.5), power_transform_exact = power_transform(0.5, exact = TRUE),
+    yeo_johnson = yeo_johnson(0.5), yeo_johnson_exact = yeo_johnson(0.5, exact = TRUE),
+    ar = ar(2L), grouped_ar = grouped_ar(8L), gaussianize = gaussianize(),
+    gaussianize_smooth = gaussianize(smooth = TRUE)
+  )
+  for (nm in names(tr)) add(paste0("conjugate_", nm), 1L, cj(tr[[nm]]))
+  add("conjugate_log_transform", 1L, cj(log_transform()))
+  add("laplace", 1L, laplace(1L))
+  add("laplace_k3", 3L, laplace(3L))
+  add("laplace_likelihood", 1L, laplace(1L, objective = "likelihood"))
+  add("laplace_gaussian_tails", 1L, laplace(1L, tails = "gaussian"))
+  add("laplace_repeat", 1L, laplace(1L))
+  add("laplace_gaps", 1L, laplace(1L))
+  add("laplace_k3_gaps", 3L, laplace(3L))
+  add("granger", 1L, granger())
+  add("flesaker", 1L, flesaker(1L, lower = -100.0))
+  add("dantzig", 1L, dantzig(1L, expand_interval = 50L))
+  add("search_k2", 2L, adaptive_search(k = 2L, expand_interval = 40L, max_pool = 12L))
+  add("multiscale_k4", 4L, multiscale(function(kk) cj(ema_transform(0.1), kk), 4L))
+  add("parade_spliced", 1L, parade(gpdtails(cj(ema_transform(0.1)), k = 1L, nexc = 50L, warmup = 100L), 1L))
+  add("parade_laplace_k3", 3L, parade(laplace(3L), 3L))
+  add("sticky_ema_repeat", 1L, sticky(cj(ema_transform(0.1)), k = 1L))
+  add("homogenize", 1L, homogenize(cj(ema_transform(0.1)), k = 1L))
+  add("homogenize_k2_weights", 2L, homogenize(cj(ema_transform(0.1), 2L), k = 2L, couple = "weights"))
+  add("homogenize_k2_shared", 2L, homogenize(cj(ema_transform(0.1), 2L), k = 2L, couple = "shared"))
+  for (model in c("m0", "m1", "m2")) {
+    add(paste0("residual_transform_", model), 1L, residual_transform(cj(ema_transform(0.1)), model = model))
+  }
+  add("pw_ensemble_k2", 2L, precision_weighted_ensemble(list(ema(0.05, 2L), ema(0.2, 2L)), k = 2L))
+  add("bayes_ensemble_k2", 2L, bayesian_ensemble(list(ema(0.05, 2L), cj(difference(), 2L)), k = 2L))
+  add("terminal_adaptive", 1L, terminal_leaf_ensemble(list(ema(0.05, 1L), cj(difference())), k = 1L,
+                                                      depths = c(0, 1), adaptive_temperature = TRUE))
+  add("terminal_k3", 3L, terminal_leaf_ensemble(list(ema(0.05, 3L), cj(difference(), 3L)), k = 3L,
+                                                depths = c(0, 1), forget = 0.99))
+  add("leaf", 1L, leaf(1L))
+  add("scale_mixture_leaf", 1L, scale_mixture_leaf(1L))
+  add("crps_leaf", 1L, crps_leaf(1L))
+  add("garch_leaf", 1L, garch_leaf(1L))
+  add("ema_k2", 2L, ema(0.1, 2L))
+  s
+}
+
+# Restore every reference checkpoint, step `continue` ticks, compare the
+# outputs with the reference's at 1e-6, then compare R's own state with the
+# reference's state at that point, field for field. If out_dir is given, R's
+# state there is written as <scenario>_<t>.json for the reference to resume
+# (tools/check_r_state_in_python.py). With roundtrip, R's state is also put
+# through JSON and the twin stepped beside it for another `continue` ticks,
+# bit for bit.
+run_state_parity <- function(vec_path, verbose = TRUE, only = NULL, out_dir = NULL, roundtrip = TRUE) {
+  cat <- if (verbose) base::cat else function(...) invisible(NULL)
+  con <- gzfile(vec_path)
+  v <- jsonlite::fromJSON(con, simplifyVector = FALSE)
+  ATOL <- 1e-6
+  RTOL <- 1e-6
+  num <- function(e) switch(as.character(e), inf = Inf, `-inf` = -Inf, nan = NaN, as.numeric(e))
+  close <- function(got, want) {
+    if (is.nan(want)) return(is.nan(got))
+    if (is.infinite(want)) return(identical(got, want))
+    is.finite(got) && abs(got - want) <= ATOL + RTOL * abs(want)
+  }
+  probe <- function(d) {
+    c(dist_mean(d), dist_std(d), dist_logpdf(d, v$probe), dist_cdf(d, v$probe),
+      dist_quantile(d, v$q_lo), dist_quantile(d, v$q_hi), dist_crps(d, v$probe))
+  }
+  state_diffs <- function(a, b, path, acc) {
+    if (length(acc) > 20) return(acc)
+    kind <- function(x) if (is.null(x)) "null" else if (is.list(x)) (if (is.null(names(x))) "array" else "object") else "scalar"
+    ta <- kind(a)
+    tb <- kind(b)
+    if (length(a) == 0 && length(b) == 0 && ta %in% c("array", "object") && tb %in% c("array", "object")) return(acc)
+    if (ta != tb) return(c(acc, sprintf("%s: %s vs %s", path, ta, tb)))
+    if (ta == "object") {
+      if (!setequal(names(a), names(b))) return(c(acc, sprintf("%s: keys differ", path)))
+      for (key in names(b)) acc <- state_diffs(a[[key]], b[[key]], paste0(path, ".", key), acc)
+    } else if (ta == "array") {
+      if (length(a) != length(b)) return(c(acc, sprintf("%s: length %d vs %d", path, length(a), length(b))))
+      for (i in seq_along(a)) acc <- state_diffs(a[[i]], b[[i]], sprintf("%s[%d]", path, i - 1L), acc)
+    } else if (ta == "scalar") {
+      if (is.numeric(a) && is.numeric(b)) {
+        if (!close(as.numeric(a), as.numeric(b))) acc <- c(acc, sprintf("%s: %.12g vs %.12g", path, a, b))
+      } else if (!identical(a, b)) {
+        acc <- c(acc, sprintf("%s: %s vs %s", path, format(a), format(b)))
+      }
+    }
+    acc
+  }
+  scenarios <- state_parity_scenarios()
+  if (!is.null(only)) scenarios <- scenarios[only]
+  res <- list(scenarios = list(), values_checked = 0L, fails = 0L,
+              missing = setdiff(names(v$scenarios), names(state_parity_scenarios())))
+  for (name in names(scenarios)) {
+    want <- v$scenarios[[name]]
+    if (is.null(want)) {
+      res$fails <- res$fails + 1L
+      cat(sprintf("FAIL %-28s not in the vectors\n", name))
+      next
+    }
+    series <- vapply(v$series[[want$series]], num, 0.0)
+    sk <- scenarios[[name]]$sk
+    sc_fails <- 0L
+    deep <- 0L
+    for (cp in want$checkpoints) {
+      st <- state_from_json(cp$state)
+      for (m in seq_len(v$`continue`)) {
+        r <- sk(series[cp$t + m], st)
+        st <- r$state
+        for (h in seq_along(r$dists)) {
+          got <- probe(r$dists[[h]])
+          exp_ <- vapply(cp$out[[m]][[h]], num, 0.0)
+          tail_ <- .deep_tail_probe(r$dists[[h]], v$probe)
+          for (j in seq_along(got)) {
+            res$values_checked <- res$values_checked + 1L
+            if (tail_ && j %in% c(3L, 4L) && !close(got[j], exp_[j]) && is.finite(got[j]) &&
+                abs(got[j] - exp_[j]) <= ATOL + 1e-4 * abs(exp_[j])) {
+              deep <- deep + 1L
+              next
+            }
+            if (!close(got[j], exp_[j])) {
+              sc_fails <- sc_fails + 1L
+              if (sc_fails <= 3) {
+                cat(sprintf("FAIL %s t=%d +%d h %d probe %d: got %.12g want %.12g\n", name, cp$t, m, h, j, got[j], exp_[j]))
+              }
+            }
+          }
+        }
+      }
+      mine <- state_to_json(st)
+      d <- state_diffs(mine, cp$state_next, "", character(0))
+      if (length(d)) {
+        sc_fails <- sc_fails + length(d)
+        cat(sprintf("FAIL %s t=%d state after %d steps: %s\n", name, cp$t, v$`continue`, paste(d[seq_len(min(3L, length(d)))], collapse = "; ")))
+      }
+      text <- to_json(mine, digits = 17L)
+      if (!is.null(out_dir)) {
+        writeLines(text, file.path(out_dir, sprintf("%s_%d.json", name, cp$t)))
+      }
+      if (roundtrip) {
+        # Within R a JSON checkpoint resumes bit for bit: step the live state
+        # and its JSON twin side by side; outputs identical, states equal as text.
+        twin <- state_from_json(jsonlite::parse_json(text, simplifyVector = FALSE))
+        if (!identical(to_json(state_to_json(twin), digits = 17L), text)) {
+          sc_fails <- sc_fails + 1L
+          cat(sprintf("FAIL %s t=%d: re-encoded restore differs\n", name, cp$t))
+        }
+        for (m in seq_len(v$`continue`)) {
+          y <- series[cp$t + v$`continue` + m]
+          ra <- sk(y, st)
+          rb <- sk(y, twin)
+          st <- ra$state
+          twin <- rb$state
+          pa <- unlist(lapply(ra$dists, probe))
+          pb <- unlist(lapply(rb$dists, probe))
+          if (!identical(pa, pb)) {
+            sc_fails <- sc_fails + 1L
+            cat(sprintf("FAIL %s t=%d +%d: R JSON restore is not bit-exact\n", name, cp$t, v$`continue` + m))
+            break
+          }
+        }
+        if (!identical(to_json(state_to_json(st), digits = 17L), to_json(state_to_json(twin), digits = 17L))) {
+          sc_fails <- sc_fails + 1L
+          cat(sprintf("FAIL %s t=%d: R JSON restore state drifted\n", name, cp$t))
+        }
+      }
+    }
+    res$scenarios[[name]] <- list(fails = sc_fails, deep_tail = deep)
+    res$fails <- res$fails + sc_fails
+    cat(sprintf("%s %-28s %s%s\n", if (sc_fails) "FAIL" else "ok  ", name,
+                if (sc_fails) paste(sc_fails, "mismatches") else "",
+                if (deep) sprintf(" (%d deep-tail logpdf/cdf probes at 1e-4)", deep) else ""))
+  }
+  if (length(res$missing) && is.null(only)) {
+    res$fails <- res$fails + length(res$missing)
+    cat(sprintf("FAIL vectors carry scenarios this runner lacks: %s\n", paste(res$missing, collapse = ", ")))
+  }
+  cat(sprintf("%d values checked\n", res$values_checked))
+  cat(if (res$fails > 0L) sprintf("STATE PARITY FAILED: %d\n", res$fails) else "STATE PARITY OK\n")
+  res
+}
+
+# The probe point lies where a spliced predictive's body has less than 1e-8
+# mass beyond it. There the splice's z comes from the body CDF within ~1e-12
+# of 0 or 1, which both ports resolve only to the last bit of that CDF (the
+# reference's 0.5 * (1 + erf), R's pnorm sum), so logpdf and cdf agree only
+# to about 1e-5 relative. The deep-tail quantile was fixed in the reference
+# (0ad69a5); logpdf and cdf there still read the body CDF.
+.deep_tail_probe <- function(d, x) {
+  if (!isTRUE(d$spliced)) {
+    return(FALSE)
+  }
+  cm <- dist_components(d$body)
+  if (is.null(cm)) {
+    return(FALSE)
+  }
+  lower <- sum(cm$w * pnorm((x - cm$m) / cm$s))
+  upper <- sum(cm$w * pnorm((x - cm$m) / cm$s, lower.tail = FALSE))
+  min(lower, upper) < 1e-8
+}
