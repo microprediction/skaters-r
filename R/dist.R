@@ -10,12 +10,13 @@ dist_gaussian <- function(mean = 0.0, std = 1.0) dist_new(1.0, mean, std)
 
 # The mixture components a consumer may read, as list(w, m, s): the Dist
 # itself, the moment-matched view of a pushforward, or NULL for a predictive
-# with no components (tail-spliced, granger mixture). Python's d.components.
+# with no components (tail-spliced, granger mixture, corrected, homogenized).
+# Python's d.components.
 dist_components <- function(d) {
   if (isTRUE(d$pushforward)) {
     return(pushforward_components(d))
   }
-  if (isTRUE(d$spliced) || isTRUE(d$mixture)) {
+  if (isTRUE(d$spliced) || isTRUE(d$mixture) || isTRUE(d$corrected) || isTRUE(d$homogenized)) {
     return(NULL)
   }
   d
@@ -43,6 +44,12 @@ dist_mean <- function(d) {
   if (isTRUE(d$mixture)) {
     return(mixture_mean(d))
   }
+  if (isTRUE(d$corrected)) {
+    return(corrected_mean(d))
+  }
+  if (isTRUE(d$homogenized)) {
+    return(homogenized_mean(d))
+  }
   if (isTRUE(d$pushforward)) {
     return(pushforward_mean(d))
   }
@@ -56,6 +63,12 @@ dist_var <- function(d) {
   if (isTRUE(d$mixture)) {
     return(mixture_var(d))
   }
+  if (isTRUE(d$corrected)) {
+    return(corrected_var(d))
+  }
+  if (isTRUE(d$homogenized)) {
+    return(homogenized_var(d))
+  }
   if (isTRUE(d$pushforward)) {
     return(pushforward_var(d))
   }
@@ -67,6 +80,12 @@ dist_var <- function(d) {
 }
 
 dist_std <- function(d) {
+  if (isTRUE(d$corrected)) {
+    return(corrected_std(d))
+  }
+  if (isTRUE(d$homogenized)) {
+    return(homogenized_std(d))
+  }
   if (isTRUE(d$pushforward)) {
     return(pushforward_std(d))
   }
@@ -77,6 +96,12 @@ dist_std <- function(d) {
 dist_logpdf <- function(d, x) {
   if (isTRUE(d$mixture)) {
     return(mixture_logpdf(d, x))
+  }
+  if (isTRUE(d$corrected)) {
+    return(corrected_logpdf(d, x))
+  }
+  if (isTRUE(d$homogenized)) {
+    return(homogenized_logpdf(d, x))
   }
   if (isTRUE(d$pushforward)) {
     return(pushforward_logpdf(d, x))
@@ -107,6 +132,12 @@ dist_cdf <- function(d, x) {
   if (isTRUE(d$mixture)) {
     return(mixture_cdf(d, x))
   }
+  if (isTRUE(d$corrected)) {
+    return(corrected_cdf(d, x))
+  }
+  if (isTRUE(d$homogenized)) {
+    return(homogenized_cdf(d, x))
+  }
   if (isTRUE(d$pushforward)) {
     return(pushforward_cdf(d, x))
   }
@@ -126,6 +157,12 @@ dist_cdf <- function(d, x) {
 dist_crps <- function(d, x) {
   if (isTRUE(d$mixture)) {
     return(mixture_crps(d, x))
+  }
+  if (isTRUE(d$corrected)) {
+    return(corrected_crps(d, x))
+  }
+  if (isTRUE(d$homogenized)) {
+    return(homogenized_crps(d, x))
   }
   if (isTRUE(d$pushforward)) {
     return(pushforward_crps(d, x))
@@ -169,6 +206,12 @@ dist_crps <- function(d, x) {
 dist_quantile <- function(d, p, tol = 1e-9, max_iter = 2100L) {
   if (isTRUE(d$mixture)) {
     return(mixture_quantile(d, p))
+  }
+  if (isTRUE(d$corrected)) {
+    return(corrected_quantile(d, p, tol = tol, max_iter = max_iter))
+  }
+  if (isTRUE(d$homogenized)) {
+    return(homogenized_quantile(d, p, tol = tol, max_iter = max_iter))
   }
   if (isTRUE(d$pushforward)) {
     return(pushforward_quantile(d, p, tol = tol, max_iter = max_iter))
@@ -281,6 +324,9 @@ dist_quantile <- function(d, p, tol = 1e-9, max_iter = 2100L) {
 }
 
 dist_shift <- function(d, delta) {
+  if (isTRUE(d$pushforward)) {
+    return(pushforward_shift(d, delta))
+  }
   if (isTRUE(d$spliced)) {
     return(spliced_shift(d, delta))
   }
@@ -289,6 +335,9 @@ dist_shift <- function(d, delta) {
 
 dist_scale <- function(d, factor) {
   stopifnot(factor != 0)
+  if (isTRUE(d$pushforward)) {
+    return(pushforward_scale(d, factor))
+  }
   if (isTRUE(d$spliced)) {
     return(spliced_scale(d, factor))
   }
@@ -297,6 +346,9 @@ dist_scale <- function(d, factor) {
 
 dist_affine <- function(d, a, b) {
   stopifnot(a != 0)
+  if (isTRUE(d$pushforward)) {
+    return(pushforward_affine(d, a, b))
+  }
   if (isTRUE(d$spliced)) {
     return(spliced_affine(d, a, b))
   }

@@ -49,6 +49,16 @@ run_parity <- function(vec_path, verbose = TRUE) {
     add("yeojohnson_half", conjugate(leaf(k), yeo_johnson(0.5), k))
     add("ou", conjugate(leaf(k), ou_transform(0.1), k))
     add("ou_sqrt", conjugate(conjugate(leaf(k), ou_transform(0.1), k), yeo_johnson(0.5), k))
+    add("seasonal_scale", conjugate(leaf(k), seasonal_scale(7L), k))
+    add("seasonal_scale_c", conjugate(leaf(k), seasonal_scale(7L, 0.1, center = TRUE), k))
+    add("power_exact", conjugate(leaf(k), power_transform(0.5, exact = TRUE), k))
+    add("yeojohnson_exact", conjugate(leaf(k), yeo_johnson(0.5, exact = TRUE), k))
+    add("log_lower", conjugate(leaf(k), log_transform(lower = -15.0), k))
+    add("log_upper", conjugate(leaf(k), log_transform(upper = 15.0), k))
+    add("gaussianize", conjugate(leaf(k), gaussianize(), k))
+    add("gaussianize_smooth", conjugate(leaf(k), gaussianize(smooth = TRUE), k))
+    add("gaussianize_delete", conjugate(leaf(k), gaussianize(max_knots = 15L, guard = "delete", slope_cap = 1.5), k))
+    add("gaussianize_emin", conjugate(leaf(k), gaussianize(max_knots = 15L, guard = "emin", slope_cap = 1.5), k))
     add("ema_skater", ema(0.05, k))
     add("pw_ensemble", precision_weighted_ensemble(list(ema(0.05, k), ema(0.2, k)), k))
     add("multiscale", multiscale(function(kk) conjugate(leaf(kk), ema_transform(0.1), kk), k))
@@ -87,6 +97,7 @@ run_parity <- function(vec_path, verbose = TRUE) {
   scenarios[["spec_ema"]] <- list(k = 1L, sk = spec_build(ema_spec(0.05, 1L)))
   scenarios[["pol_laplace"]] <- list(k = 1L, sk = laplace(k = 1L))
   scenarios[["pol_laplace_k3"]] <- list(k = 3L, sk = laplace(k = 3L))
+  scenarios[["pol_flesaker"]] <- list(k = 1L, sk = flesaker(k = 1L, lower = -15.0))
 
   fails <- 0L
   checked <- 0L
@@ -299,7 +310,8 @@ transform_parity_scenarios <- function() {
   s
 }
 
-run_transform_parity <- function(vec_path, verbose = TRUE, only = NULL) {
+run_transform_parity <- function(vec_path, verbose = TRUE, only = NULL,
+                                 scenarios = transform_parity_scenarios(), label = "TRANSFORM PARITY") {
   if (!requireNamespace("jsonlite", quietly = TRUE)) {
     stop("jsonlite is required to read the parity vectors")
   }
@@ -307,7 +319,7 @@ run_transform_parity <- function(vec_path, verbose = TRUE, only = NULL) {
   v <- jsonlite::fromJSON(vec_path, simplifyVector = FALSE)
   ATOL <- 1e-6
   RTOL <- 1e-6
-  scenarios <- transform_parity_scenarios()
+  all_names <- names(scenarios)
   if (!is.null(only)) scenarios <- scenarios[only]
   result <- list(scenarios = list(), values_checked = 0L, fails = 0L, missing = character(0))
   for (name in names(scenarios)) {
@@ -365,13 +377,127 @@ run_transform_parity <- function(vec_path, verbose = TRUE, only = NULL) {
     result$fails <- result$fails + sc_fails
     cat(sprintf("%s %-28s %s\n", if (sc_fails) "FAIL" else "ok  ", name, if (sc_fails) paste(sc_fails, "mismatches") else ""))
   }
-  extra <- setdiff(names(v$scenarios), names(transform_parity_scenarios()))
+  extra <- setdiff(names(v$scenarios), all_names)
   if (length(extra) && is.null(only)) {
     result$fails <- result$fails + length(extra)
     result$missing <- c(result$missing, extra)
     cat(sprintf("FAIL vectors carry scenarios this runner lacks: %s\n", paste(extra, collapse = ", ")))
   }
   cat(sprintf("%d values checked\n", result$values_checked))
-  cat(if (result$fails > 0L) sprintf("TRANSFORM PARITY FAILED: %d\n", result$fails) else "TRANSFORM PARITY OK\n")
+  cat(if (result$fails > 0L) sprintf("%s FAILED: %d\n", label, result$fails) else sprintf("%s OK\n", label))
   result
+}
+
+# Wave 2 parity: inst/parity/wave2_vectors.json from tools/gen_wave2_vectors.py.
+# homogenize, residual_transform and its diagnostics, dantzig and search,
+# pushforward affine maps, and the spec JSON and names (byte for byte).
+wave2_parity_scenarios <- function() {
+  spliced <- function(k) {
+    gpdtails(conjugate(leaf(k), ema_transform(0.1), k), k = k, level = 0.9, nexc = 50L, warmup = 100L)
+  }
+  ema_leaf <- function(k) conjugate(leaf(k), ema_transform(0.1), k)
+  s <- list()
+  add <- function(name, series, k, sk) s[[name]] <<- list(series = series, k = k, sk = sk)
+  add("homogenize_leaf", "main", 1L, homogenize(leaf(1L)))
+  add("homogenize_ema", "main", 1L, homogenize(ema_leaf(1L)))
+  for (couple in c("none", "weights", "state", "shared")) {
+    add(paste0("homogenize_ema_k3_", couple), "main", 3L, homogenize(ema_leaf(3L), k = 3L, couple = couple, lam = 0.4))
+  }
+  add("homogenize_custom", "main", 1L, homogenize(ema_leaf(1L),
+    candidates = homogenize_candidates(c(0.0, 0.9), 0.05, c(0.0, 0.3, 0.9), delta_max = 0.6)))
+  add("homogenize_spliced", "main", 1L, homogenize(spliced(1L)))
+  for (model in c("m0", "m1", "m2")) {
+    add(paste0("residual_", model), "main", 1L, residual_transform(ema_leaf(1L), model = model, lr = 0.05))
+  }
+  add("residual_m2_spliced", "main", 1L, residual_transform(spliced(1L), model = "m2"))
+  add("dantzig", "main", 1L, dantzig(k = 1L, expand_interval = 40L))
+  add("search", "main", 1L, adaptive_search(k = 1L, expand_interval = 60L, max_pool = 10L))
+  add("standardize_over_yj_exact", "main", 1L,
+      conjugate(conjugate(leaf(1L), yeo_johnson(0.0, exact = TRUE)), standardize(0.05)))
+  add("seasonal_scale_over_log", "positive", 3L,
+      conjugate(conjugate(leaf(3L), log_transform(lower = -1.0), 3L), seasonal_scale(7L), 3L))
+  add("gaussianize_over_yj_exact", "main", 1L,
+      conjugate(conjugate(leaf(1L), yeo_johnson(0.5, exact = TRUE)), gaussianize()))
+  s
+}
+
+run_wave2_parity <- function(vec_path, verbose = TRUE) {
+  cat <- if (verbose) base::cat else function(...) invisible(NULL)
+  res <- run_transform_parity(vec_path, verbose = verbose, scenarios = wave2_parity_scenarios(),
+                              label = "WAVE2 SCENARIO PARITY")
+  v <- jsonlite::fromJSON(vec_path, simplifyVector = FALSE)
+  ATOL <- 1e-6
+  RTOL <- 1e-6
+  num <- function(e) switch(as.character(e), inf = Inf, `-inf` = -Inf, nan = NaN, as.numeric(e))
+  close <- function(got, want) {
+    if (is.nan(want)) return(is.nan(got))
+    if (is.infinite(want)) return(identical(got, want))
+    is.finite(got) && abs(got - want) <= ATOL + RTOL * abs(want)
+  }
+  probe <- function(d) {
+    c(dist_mean(d), dist_std(d), dist_logpdf(d, v$probe), dist_cdf(d, v$probe),
+      dist_quantile(d, v$q_lo), dist_quantile(d, v$q_hi), dist_crps(d, v$probe))
+  }
+  tally <- function(section, ok, msg) {
+    res$values_checked <<- res$values_checked + 1L
+    if (!ok) {
+      res$fails <<- res$fails + 1L
+      res$sections[[section]] <<- (if (is.null(res$sections[[section]])) 0L else res$sections[[section]]) + 1L
+      cat(sprintf("FAIL %s %s\n", section, msg))
+    }
+  }
+  res$sections <- list(affine = 0L, diagnostics = 0L, specs = 0L)
+
+  # pushforward affine, shift and scale
+  inner <- dist_new(c(0.6, 0.4), c(0.2, -0.5), c(0.7, 1.3))
+  bases <- list(
+    table = yeo_johnson(0.0, exact = TRUE)$inverse_k(list(inner), list())[[1]],
+    analytic = log_transform()$inverse_k(list(inner), list())[[1]]
+  )
+  for (cs in v$affine) {
+    d <- bases[[cs$kind]]
+    e <- switch(cs$op,
+      affine = dist_affine(d, cs$a, cs$b),
+      shift = dist_shift(d, 1.5),
+      scale = dist_scale(d, -2.0),
+      affine2 = dist_affine(dist_affine(d, -0.5, 2.0), -3.0, 1.0)
+    )
+    got <- probe(e)
+    want <- vapply(cs$probe, num, 0.0)
+    for (j in seq_along(got)) {
+      tally("affine", close(got[j], want[j]),
+            sprintf("%s %s(%g, %g) probe %d: got %.12g want %.12g", cs$kind, cs$op, cs$a, cs$b, j, got[j], want[j]))
+    }
+  }
+  cat(sprintf("%s affine (%d cases)\n", if (res$sections$affine) "FAIL" else "ok  ", length(v$affine)))
+
+  # residual diagnostics, one summary row per update
+  dg <- v$diagnostics
+  rd <- residual_diagnostics(dg$K, dg$halflife)
+  for (i in seq_along(dg$z)) {
+    rd <- residual_diagnostics_update(rd, as.numeric(dg$z[[i]]))
+    sm <- residual_diagnostics_summary(rd)
+    got <- c(sm$n, sm$`E[z]`, sm$`E[z2]`, sm$`E[z3]`, sm$`E[z4]`, sm$L, sm$cross_sq)
+    want <- vapply(dg$rows[[i]], num, 0.0)
+    tally("diagnostics", length(got) == length(want), sprintf("row %d length", i))
+    for (j in seq_along(want)) {
+      tally("diagnostics", close(got[j], want[j]), sprintf("row %d col %d: got %.12g want %.12g", i, j, got[j], want[j]))
+    }
+  }
+  cat(sprintf("%s residual_diagnostics (%d rows)\n", if (res$sections$diagnostics) "FAIL" else "ok  ", length(dg$z)))
+
+  # specs: JSON byte for byte through a round trip, canonical names, build
+  for (sp in v$specs) {
+    parsed <- from_json(sp$json)
+    tally("specs", identical(to_json(parsed), sp$json), sprintf("to_json(from_json(%s)) = %s", sp$json, to_json(parsed)))
+    tally("specs", identical(spec_name(parsed), sp$name), sprintf("spec_name %s: got %s want %s", sp$json, spec_name(parsed), sp$name))
+    f <- tryCatch(build(parsed), error = function(e) NULL)
+    tally("specs", identical(!is.null(f), isTRUE(sp$builds)), sprintf("build %s: builds %s", sp$json, !is.null(f)))
+    if (!is.null(f)) {
+      tally("specs", identical(attr(f, "spec_name"), sp$name), sprintf("build name %s", sp$json))
+    }
+  }
+  cat(sprintf("%s specs (%d)\n", if (res$sections$specs) "FAIL" else "ok  ", length(v$specs)))
+  cat(if (res$fails > 0L) sprintf("WAVE2 PARITY FAILED: %d\n", res$fails) else "WAVE2 PARITY OK\n")
+  res
 }

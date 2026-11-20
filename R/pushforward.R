@@ -284,6 +284,57 @@ pushforward_crps <- function(d, x) {
   d$cache$qgrid
 }
 
+# --- affine maps ---
+
+# The law of a*Y + b, still a pushforward of (a reflection of) the same inner.
+# a > 0 composes the map; a < 0 reflects the inner with dist_scale(inner, -1)
+# so the composed map stays increasing. Port of PushforwardDist.affine.
+pushforward_affine <- function(d, a, b) {
+  a <- as.numeric(a)
+  b <- as.numeric(b)
+  if (a == 0.0 || !is.finite(a) || !is.finite(b)) {
+    stop("affine needs a finite nonzero a and a finite b")
+  }
+  r <- if (a > 0) 1.0 else -1.0 # z' = r * z
+  inner <- if (r > 0) d$inner else dist_scale(d$inner, -1.0)
+  inv <- d$inv_fn
+  fwd <- d$fwd_fn
+  lj <- d$log_jacobian_fn
+  cmf <- d$component_moments_fn
+  sinv <- d$scaled_inv_fn
+  log_a <- log(abs(a))
+  ys <- NULL
+  zs <- NULL
+  if (!is.null(d$ys)) {
+    ys <- a * d$ys + b
+    zs <- r * d$zs
+    if (r < 0) {
+      ys <- rev(ys)
+      zs <- rev(zs)
+    }
+  }
+  pushforward_new(
+    inner, ys, zs,
+    inv_fn = if (is.null(inv)) NULL else function(z) a * inv(r * z) + b,
+    fwd_fn = if (is.null(fwd)) NULL else function(y) r * fwd((y - b) / a),
+    log_jacobian_fn = if (is.null(lj)) NULL else function(z) lj(r * z) - log_a,
+    component_moments_fn = if (is.null(cmf)) NULL else function(m, s) {
+      ms <- cmf(r * m, s)
+      c(a * ms[1] + b, abs(a) * ms[2])
+    },
+    scaled_inv_fn = if (is.null(sinv)) NULL else function(z, w) a * sinv(r * z, w) + w * b
+  )
+}
+
+pushforward_shift <- function(d, delta) pushforward_affine(d, 1.0, delta)
+
+pushforward_scale <- function(d, factor) {
+  if (factor == 0) {
+    stop("scale factor must be nonzero")
+  }
+  pushforward_affine(d, factor, 0.0)
+}
+
 # --- Dist-compatibility view ---
 
 # Centered Gauss-Hermite quadrature (skaters#225).

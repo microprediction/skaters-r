@@ -9,6 +9,9 @@ burn-in and input series as vectors.json.
 
 Run from the R repository root with the reference source on the path:
     PYTHONPATH=/path/to/skaters/src python3 tools/gen_transform_vectors.py
+
+SKATERS_REF, if set, labels the reference in the output (for a checkout with
+local changes).
 """
 import json
 import math
@@ -53,16 +56,6 @@ def spliced(k):
     # GPD splice live from step 100 of the 150-point series.
     return gpdtails(conjugate(leaf(k=k), ema_transform(0.1), k=k),
                     k=k, level=0.9, nexc=50, warmup=100)
-
-
-# Scenarios whose reference values are float-limited, with the relative
-# tolerance they are checked at. A spliced predictive's quantile past the
-# upper splice is the body's quantile at 1 - 1e-12, where the body CDF is
-# flat to within its last bit, so the solved z is determined only to about
-# 1e-6 absolute. Exponential amplification (yeo_johnson at lambda 0) or a
-# table window placed by that quantile (gaussianize) carries it to the probes.
-RTOL = {"spliced_yj_log": 1e-5, "spliced_yj_log_k3": 1e-5,
-        "spliced_gaussianize": 1e-5, "spliced_gaussianize_k3": 1e-5}
 
 
 def scenarios():
@@ -114,7 +107,7 @@ def main():
            "series": SERIES, "scenarios": {}}
     src = os.path.dirname(os.path.dirname(os.path.dirname(skaters.__file__)))
     try:
-        out["source"] = subprocess.check_output(
+        out["source"] = os.environ.get("SKATERS_REF") or subprocess.check_output(
             ["git", "-C", src, "rev-parse", "--short", "HEAD"], text=True).strip()
     except Exception:
         out["source"] = "unknown"
@@ -125,8 +118,6 @@ def main():
             if t >= BURN:
                 rows.append([probe(d) for d in dists])
         out["scenarios"][name] = {"series": series, "k": k, "out": rows}
-        if name in RTOL:
-            out["scenarios"][name]["rtol"] = RTOL[name]
         print(f"[gen] {name}")
     path = os.path.join("inst", "parity", "transform_vectors.json")
     with open(path, "w") as f:

@@ -57,6 +57,60 @@
   x - u / (1.0 + 0.5 * x * u)
 }
 
+# Below this tail mass the body quantile is solved on tail-mass sums that keep
+# relative precision (pnorm of the standardized distance, the reference's
+# 0.5 * erfc). The body CDF near 0 or 1 resolves a 1e-12 tail only to its
+# last bit, so bisection on it stopped on a plateau that differed between
+# libm builds and ports. Above 1e-8 the plateau is below tol and the plain
+# quantile is kept. Port of _body_tail_quantile (microprediction/skaters
+# 0ad69a5).
+.TAIL_U <- 1e-8
+
+.body_tail_quantile <- function(body, comps, t, upper, tol, max_iter) {
+  sign <- if (upper) -1.0 else 1.0 # mirror the upper tail onto the lower
+  w <- comps$w
+  m <- sign * comps$m
+  s <- comps$s
+  mass <- function(x) {
+    total <- 0.0
+    for (i in seq_along(w)) {
+      if (s[i] > 0.0) {
+        total <- total + w[i] * pnorm((x - m[i]) / s[i])
+      } else if (x >= m[i]) {
+        total <- total + w[i]
+      }
+    }
+    total
+  }
+  mu <- sign * dist_mean(body)
+  sigma <- sqrt(dist_var(body))
+  active <- s[w > 0 & s > 0]
+  scale <- if (length(active)) min(active) else 1.0
+  x_tol <- tol * min(1.0, scale)
+  seed <- max(8.0 * sigma, 1e-12 * max(1.0, abs(mu)))
+  lo <- mu - seed
+  hi <- mu
+  width <- seed
+  for (i in seq_len(120)) {
+    if (mass(hi) >= t) break
+    hi <- hi + width
+    width <- width * 2.0
+  }
+  width <- seed
+  for (i in seq_len(120)) {
+    if (mass(lo) < t) break
+    lo <- lo - width
+    width <- width * 2.0
+  }
+  for (i in seq_len(max_iter)) {
+    if (hi - lo < x_tol) break
+    mid <- 0.5 * (lo + hi)
+    if (!(lo < mid && mid < hi)) break
+    if (mass(mid) < t) lo <- mid else hi <- mid
+  }
+  sign * (0.5 * (lo + hi))
+}
+
 # --- GPD helpers ---
 
 .gpd_logpdf <- function(e, gamma, sigma) {
@@ -197,6 +251,13 @@ spliced_quantile <- function(d, p, tol = 1e-9, max_iter = 2100L) {
   } else {
     u <- d$plo + (p - d$zeta_lo) / d$c
     z <- .phi_inv(min(max(u, .TAILS_EPS), 1.0 - .TAILS_EPS))
+  }
+  t <- max(pnorm(-abs(z)), .TAILS_EPS) # body tail mass beyond the target
+  if (t < .TAIL_U) {
+    comps <- dist_components(d$body)
+    if (!is.null(comps)) {
+      return(.body_tail_quantile(d$body, comps, t, z > 0.0, tol, max_iter))
+    }
   }
   ub <- min(max(pnorm(z), .TAILS_EPS), 1.0 - .TAILS_EPS)
   dist_quantile(d$body, ub, tol = tol, max_iter = max_iter)
