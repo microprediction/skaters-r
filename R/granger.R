@@ -13,15 +13,17 @@
 granger_params <- function(frequency = c("monthly", "weekly", "hourly")) {
   frequency <- match.arg(frequency)
   path <- system.file("extdata", "granger", paste0(frequency, ".rds"), package = "skaters")
-  if (!nzchar(path)) {
-    path <- file.path("inst", "extdata", "granger", paste0(frequency, ".rds"))
+  if (!nzchar(path)) { # a source checkout: the repository root or tests/testthat
+    for (root in c(".", file.path("..", ".."))) {
+      path <- file.path(root, "inst", "extdata", "granger", paste0(frequency, ".rds"))
+      if (file.exists(path)) break
+    }
   }
   if (!file.exists(path)) stop("no shipped granger parameters for ", frequency)
   readRDS(path)
 }
 
 .granger_transform <- function(name, kw) {
-  no_exact <- function() if (isTRUE(kw$exact)) stop("granger: ", name, "(exact=TRUE) is not ported")
   switch(name,
     ema_transform = ema_transform(kw$alpha),
     difference = difference(),
@@ -34,8 +36,8 @@ granger_params <- function(frequency = c("monthly", "weekly", "hourly")) {
     standardize = standardize(kw$alpha, kw$eps),
     fractional_difference = fractional_difference(kw$d, as.integer(kw$window)),
     garch = garch(kw$omega, kw$alpha, kw$beta, kw$mean_alpha, kw$eps),
-    power_transform = { no_exact(); power_transform(kw$p) },
-    yeo_johnson = { no_exact(); yeo_johnson(kw$lmbda) },
+    power_transform = power_transform(kw$p, exact = isTRUE(kw$exact)),
+    yeo_johnson = yeo_johnson(kw$lmbda, exact = isTRUE(kw$exact)),
     stop("granger: unknown transform ", name)
   )
 }
