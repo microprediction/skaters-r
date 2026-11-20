@@ -8,6 +8,19 @@ dist_new <- function(w, m, s) {
 
 dist_gaussian <- function(mean = 0.0, std = 1.0) dist_new(1.0, mean, std)
 
+# The mixture components a consumer may read, as list(w, m, s): the Dist
+# itself, the moment-matched view of a pushforward, or NULL for a predictive
+# with no components (tail-spliced, granger mixture). Python's d.components.
+dist_components <- function(d) {
+  if (isTRUE(d$pushforward)) {
+    return(pushforward_components(d))
+  }
+  if (isTRUE(d$spliced) || isTRUE(d$mixture)) {
+    return(NULL)
+  }
+  d
+}
+
 dist_combine <- function(dists, weights = NULL) {
   n <- length(dists)
   if (is.null(weights)) {
@@ -18,7 +31,7 @@ dist_combine <- function(dists, weights = NULL) {
   m <- c()
   s <- c()
   for (i in seq_len(n)) {
-    d <- dists[[i]]
+    d <- dist_components(dists[[i]])
     w <- c(w, weights[i] / wt * d$w)
     m <- c(m, d$m)
     s <- c(s, d$s)
@@ -30,6 +43,9 @@ dist_mean <- function(d) {
   if (isTRUE(d$mixture)) {
     return(mixture_mean(d))
   }
+  if (isTRUE(d$pushforward)) {
+    return(pushforward_mean(d))
+  }
   if (isTRUE(d$spliced)) {
     return(spliced_mean(d))
   }
@@ -40,6 +56,9 @@ dist_var <- function(d) {
   if (isTRUE(d$mixture)) {
     return(mixture_var(d))
   }
+  if (isTRUE(d$pushforward)) {
+    return(pushforward_var(d))
+  }
   if (isTRUE(d$spliced)) {
     return(spliced_var(d))
   }
@@ -48,6 +67,9 @@ dist_var <- function(d) {
 }
 
 dist_std <- function(d) {
+  if (isTRUE(d$pushforward)) {
+    return(pushforward_std(d))
+  }
   v <- dist_var(d)
   if (v > 0) sqrt(v) else 0.0
 }
@@ -55,6 +77,9 @@ dist_std <- function(d) {
 dist_logpdf <- function(d, x) {
   if (isTRUE(d$mixture)) {
     return(mixture_logpdf(d, x))
+  }
+  if (isTRUE(d$pushforward)) {
+    return(pushforward_logpdf(d, x))
   }
   if (isTRUE(d$spliced)) {
     return(spliced_logpdf(d, x))
@@ -82,6 +107,9 @@ dist_cdf <- function(d, x) {
   if (isTRUE(d$mixture)) {
     return(mixture_cdf(d, x))
   }
+  if (isTRUE(d$pushforward)) {
+    return(pushforward_cdf(d, x))
+  }
   if (isTRUE(d$spliced)) {
     return(spliced_cdf(d, x))
   }
@@ -98,6 +126,9 @@ dist_cdf <- function(d, x) {
 dist_crps <- function(d, x) {
   if (isTRUE(d$mixture)) {
     return(mixture_crps(d, x))
+  }
+  if (isTRUE(d$pushforward)) {
+    return(pushforward_crps(d, x))
   }
   if (isTRUE(d$spliced)) {
     return(spliced_crps(d, x))
@@ -138,6 +169,9 @@ dist_crps <- function(d, x) {
 dist_quantile <- function(d, p, tol = 1e-9, max_iter = 2100L) {
   if (isTRUE(d$mixture)) {
     return(mixture_quantile(d, p))
+  }
+  if (isTRUE(d$pushforward)) {
+    return(pushforward_quantile(d, p, tol = tol, max_iter = max_iter))
   }
   if (isTRUE(d$spliced)) {
     return(spliced_quantile(d, p, tol = tol, max_iter = max_iter))

@@ -71,9 +71,9 @@ test_that("spliced affine and scale reject a zero multiplier", {
 
 test_that("transforms wrap laplace past the splice", {
   # Before the fix these failed in dist_new once the GPD splice was live.
-  # seasonal_scale is not yet ported to R.
   transforms <- list(
     standardize = function() standardize(0.05),
+    seasonal_scale = function() seasonal_scale(7L),
     garch = function() garch(),
     ema_transform = function() ema_transform(0.05),
     difference = function() difference(),

@@ -254,3 +254,124 @@ run_parity <- function(vec_path, verbose = TRUE) {
   if (fails > 0L) cat(sprintf("PARITY FAILED: %d\n", fails)) else cat("PARITY OK\n")
   result
 }
+
+# Transform parity: inst/parity/transform_vectors.json, generated from the
+# reference by tools/gen_transform_vectors.py. seasonal_scale, gaussianize,
+# log_transform, flesaker, the exact flags, a pushforward read through the
+# next transform's components view, and every component-reading transform
+# over a tail-spliced predictive. Same probes and 1e-6 tolerance as run_parity.
+transform_parity_scenarios <- function() {
+  spliced <- function(k) {
+    gpdtails(conjugate(leaf(k), ema_transform(0.1), k), k = k, level = 0.9, nexc = 50L, warmup = 100L)
+  }
+  s <- list()
+  for (k in c(1L, 3L)) {
+    suf <- if (k == 1L) "" else sprintf("_k%d", k)
+    add <- function(name, series, sk) s[[paste0(name, suf)]] <<- list(series = series, k = k, sk = sk)
+    add("seasonal_scale", "main", conjugate(leaf(k), seasonal_scale(7L), k))
+    add("seasonal_scale_center", "main", conjugate(leaf(k), seasonal_scale(7L, center = TRUE), k))
+    add("seasonal_scale_sdiff", "main", conjugate(conjugate(leaf(k), seasonal_difference(7L), k), seasonal_scale(7L), k))
+    add("gaussianize", "main", conjugate(leaf(k), gaussianize(), k))
+    add("gaussianize_smooth", "main", conjugate(leaf(k), gaussianize(smooth = TRUE), k))
+    add("gaussianize_delete", "main", conjugate(leaf(k), gaussianize(guard = "delete", slope_cap = 2.0), k))
+    add("gaussianize_emin", "main", conjugate(leaf(k), gaussianize(guard = "emin", slope_cap = 2.0), k))
+    add("gaussianize_move_tight", "main", conjugate(leaf(k), gaussianize(slope_cap = 2.0, max_knots = 15L), k))
+    add("power_exact", "main", conjugate(leaf(k), power_transform(0.5, exact = TRUE), k))
+    add("yeojohnson_log_exact", "main", conjugate(leaf(k), yeo_johnson(0.0, exact = TRUE), k))
+    add("yeojohnson_half_exact", "main", conjugate(leaf(k), yeo_johnson(0.5, exact = TRUE), k))
+    add("power_over_yj_exact", "main", conjugate(conjugate(leaf(k), yeo_johnson(0.5, exact = TRUE), k), power_transform(0.5), k))
+    add("yj_over_power_exact", "main", conjugate(conjugate(leaf(k), power_transform(0.5, exact = TRUE), k), yeo_johnson(0.0), k))
+    add("log_lower", "positive", conjugate(leaf(k), log_transform(), k))
+    add("log_lower_shifted", "main", conjugate(leaf(k), log_transform(lower = -6.0), k))
+    add("log_upper", "main", conjugate(leaf(k), log_transform(upper = 10.0), k))
+    add("spliced_power", "main", conjugate(spliced(k), power_transform(0.5), k))
+    add("spliced_yj_log", "main", conjugate(spliced(k), yeo_johnson(0.0), k))
+    add("spliced_yj_half", "main", conjugate(spliced(k), yeo_johnson(0.5), k))
+    add("spliced_gaussianize", "main", conjugate(spliced(k), gaussianize(), k))
+    add("spliced_ema", "main", conjugate(spliced(k), ema_transform(0.05), k))
+    add("spliced_seasonal_difference", "main", conjugate(spliced(k), seasonal_difference(2L), k))
+    add("spliced_seasonal_anchor", "main", conjugate(spliced(k), seasonal_anchor(2L), k))
+    add("spliced_seasonal_scale", "main", conjugate(spliced(k), seasonal_scale(7L), k))
+    add("spliced_log", "positive", conjugate(spliced(k), log_transform(), k))
+    add("spliced_power_over_yj", "main", conjugate(conjugate(spliced(k), yeo_johnson(0.5), k), power_transform(0.5), k))
+  }
+  s[["flesaker"]] <- list(series = "positive", k = 1L, sk = flesaker(k = 1L))
+  s
+}
+
+run_transform_parity <- function(vec_path, verbose = TRUE, only = NULL) {
+  if (!requireNamespace("jsonlite", quietly = TRUE)) {
+    stop("jsonlite is required to read the parity vectors")
+  }
+  cat <- if (verbose) base::cat else function(...) invisible(NULL)
+  v <- jsonlite::fromJSON(vec_path, simplifyVector = FALSE)
+  ATOL <- 1e-6
+  RTOL <- 1e-6
+  scenarios <- transform_parity_scenarios()
+  if (!is.null(only)) scenarios <- scenarios[only]
+  result <- list(scenarios = list(), values_checked = 0L, fails = 0L, missing = character(0))
+  for (name in names(scenarios)) {
+    sc <- scenarios[[name]]
+    want <- v$scenarios[[name]]
+    if (is.null(want)) {
+      result$missing <- c(result$missing, name)
+      result$fails <- result$fails + 1L
+      cat(sprintf("FAIL %-28s not in the vectors\n", name))
+      next
+    }
+    series <- unlist(v$series[[want$series]])
+    # A per-scenario rtol marks a float-limited reference (see the generator).
+    rtol <- if (is.null(want$rtol)) RTOL else as.numeric(want$rtol)
+    st <- NULL
+    row <- 0L
+    sc_fails <- 0L
+    for (i in seq_along(series)) {
+      r <- sc$sk(series[i], st)
+      st <- r$state
+      if (i - 1 >= v$burn) {
+        row <- row + 1L
+        for (h in seq_len(sc$k)) {
+          d <- r$dists[[h]]
+          got <- c(
+            dist_mean(d), dist_std(d), dist_logpdf(d, v$probe), dist_cdf(d, v$probe),
+            dist_quantile(d, v$q_lo), dist_quantile(d, v$q_hi), dist_crps(d, v$probe)
+          )
+          exp_ <- unlist(want$out[[row]][[h]])
+          exp_ <- vapply(exp_, function(e) switch(as.character(e), inf = Inf, `-inf` = -Inf, nan = NaN, as.numeric(e)), 0.0)
+          for (j in seq_along(got)) {
+            result$values_checked <- result$values_checked + 1L
+            ok <- if (is.nan(exp_[j])) {
+              is.nan(got[j])
+            } else if (is.infinite(exp_[j])) {
+              identical(got[j], exp_[j])
+            } else {
+              is.finite(got[j]) && abs(got[j] - exp_[j]) <= ATOL + rtol * abs(exp_[j])
+            }
+            if (!ok) {
+              sc_fails <- sc_fails + 1L
+              if (sc_fails <= 3) {
+                cat(sprintf("FAIL %s row %d h %d probe %d: got %.12g want %.12g\n", name, row, h, j, got[j], exp_[j]))
+              }
+            }
+          }
+        }
+      }
+    }
+    if (row != length(want$out)) {
+      sc_fails <- sc_fails + 1L
+      cat(sprintf("FAIL %s: %d rows, want %d\n", name, row, length(want$out)))
+    }
+    result$scenarios[[name]] <- list(fails = sc_fails)
+    result$fails <- result$fails + sc_fails
+    cat(sprintf("%s %-28s %s\n", if (sc_fails) "FAIL" else "ok  ", name, if (sc_fails) paste(sc_fails, "mismatches") else ""))
+  }
+  extra <- setdiff(names(v$scenarios), names(transform_parity_scenarios()))
+  if (length(extra) && is.null(only)) {
+    result$fails <- result$fails + length(extra)
+    result$missing <- c(result$missing, extra)
+    cat(sprintf("FAIL vectors carry scenarios this runner lacks: %s\n", paste(extra, collapse = ", ")))
+  }
+  cat(sprintf("%d values checked\n", result$values_checked))
+  cat(if (result$fails > 0L) sprintf("TRANSFORM PARITY FAILED: %d\n", result$fails) else "TRANSFORM PARITY OK\n")
+  result
+}

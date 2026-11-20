@@ -13,6 +13,7 @@
 \alias{dist_scale}
 \alias{dist_affine}
 \alias{dist_prune}
+\alias{dist_components}
 \title{Gaussian mixture distribution: the distributional prediction type}
 \description{
   Constructors and probes for the Gaussian mixture that every skater
@@ -22,6 +23,9 @@
   \code{dist_logpdf}, \code{dist_cdf}, \code{dist_crps},
   \code{dist_quantile}. Affine maps: \code{dist_shift},
   \code{dist_scale}, \code{dist_affine}. \code{dist_prune} reduces the
-  component count by ulp-tolerant closest-pair merging. Port of the
+  component count by ulp-tolerant closest-pair merging.
+  \code{dist_components} returns the components a consumer may read: the
+  mixture itself, the moment-matched view of a pushforward, or
+  \code{NULL} for a tail-spliced predictive. Port of the
   Python reference \code{skaters/dist.py}, parity-checked at 1e-6.
 }
