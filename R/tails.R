@@ -210,9 +210,33 @@ spliced_new <- function(body, t_lo, t_up, zeta_lo, zeta_up, g_lo, s_lo, g_up, s_
   )
 }
 
+# Body mass below x, or above x when upper, with relative precision (the
+# reference's erfc sums). Port of _body_tail_mass.
+.body_tail_mass <- function(comps, x, upper) {
+  total <- 0.0
+  for (i in seq_along(comps$w)) {
+    if (comps$s[i] > 0.0) {
+      total <- total + comps$w[i] * pnorm((x - comps$m[i]) / comps$s[i], lower.tail = !upper)
+    } else if ((if (upper) comps$m[i] - x else x - comps$m[i]) >= 0.0) {
+      total <- total + comps$w[i]
+    }
+  }
+  total
+}
+
 .spliced_z <- function(d, x) {
-  u <- min(max(dist_cdf(d$body, x), .TAILS_EPS), 1.0 - .TAILS_EPS)
-  .phi_inv(u)
+  u <- dist_cdf(d$body, x)
+  if (min(u, 1.0 - u) < .TAIL_U) {
+    comps <- dist_components(d$body)
+    if (!is.null(comps)) {
+      # deep tail: the smaller tail mass, where the CDF is down to its last bits
+      upper <- u > 0.5
+      t <- .body_tail_mass(comps, x, upper)
+      z <- .phi_inv(min(max(t, .TAILS_EPS), 0.5))
+      return(if (upper) -z else z)
+    }
+  }
+  .phi_inv(min(max(u, .TAILS_EPS), 1.0 - .TAILS_EPS))
 }
 
 spliced_cdf <- function(d, x) {

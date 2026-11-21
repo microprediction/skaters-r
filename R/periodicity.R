@@ -15,7 +15,11 @@ period_detector <- function(lags = NULL, alpha = 0.01, min_observations = 50L) {
 
   function(y, state = NULL) {
     if (is.null(state)) {
-      state <- list(buffer = numeric(0), n = 0L, mean = 0.0, var = 0.0, cross = numeric(length(lags)))
+      # cross is named by lag, the reference's decimal-string keys
+      state <- list(buffer = numeric(0), n = 0L, mean = 0.0, var = 0.0,
+                    cross = stats::setNames(numeric(length(lags)), as.character(lags)))
+    } else if (is.null(names(state$cross))) {
+      names(state$cross) <- as.character(lags) # an R checkpoint from before the canonical layout
     }
     state$buffer <- c(state$buffer, y)
     state$n <- state$n + 1L
@@ -30,8 +34,9 @@ period_detector <- function(lags = NULL, alpha = 0.01, min_observations = 50L) {
     for (i in seq_along(lags)) {
       L <- lags[i]
       if (nb > L) {
+        key <- as.character(L)
         cross <- (y - mu) * (buf[nb - L] - mu)
-        state$cross[i] <- (1 - alpha) * state$cross[i] + alpha * cross
+        state$cross[[key]] <- (1 - alpha) * state$cross[[key]] + alpha * cross
       }
     }
     if (nb > max_lag + 1) {
@@ -42,7 +47,7 @@ period_detector <- function(lags = NULL, alpha = 0.01, min_observations = 50L) {
       return(list(scores = list(), state = state))
     }
     keep <- which(state$n > lags)
-    acf <- if (state$var > 0) state$cross[keep] / state$var else numeric(length(keep))
+    acf <- if (state$var > 0) unname(state$cross[as.character(lags[keep])]) / state$var else numeric(length(keep))
     ord <- order(-abs(acf), method = "radix") # stable: ties keep lag order
     scores <- lapply(ord, function(j) c(lags[keep[j]], acf[j]))
     list(scores = scores, state = state)

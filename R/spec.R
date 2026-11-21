@@ -138,7 +138,7 @@ build <- function(spec) spec_build(spec)
   parts <- strsplit(txt, "e", fixed = TRUE)[[1]]
   mant <- parts[1]
   ex <- if (length(parts) > 1) as.integer(parts[2]) else 0L
-  dot <- regexpr(".", mant, fixed = TRUE)
+  dot <- as.integer(regexpr(".", mant, fixed = TRUE))
   frac_len <- if (dot > 0) nchar(mant) - dot else 0L
   digits <- as.integer(strsplit(gsub(".", "", mant, fixed = TRUE), "")[[1]])
   list(d = digits, e = ex - frac_len)
@@ -320,7 +320,20 @@ build <- function(spec) spec_build(spec)
   paste0("\"", paste(out, collapse = ""), "\"")
 }
 
-.json_scalar <- function(x) {
+# A double written so any correctly rounded reader recovers it exactly:
+# 17 significant digits, or the integer itself when it is integral and
+# exactly representable (as JS writes it).
+.json_float17 <- function(x) {
+  if (!is.finite(x)) {
+    return(.py_float_repr(x))
+  }
+  if (x == trunc(x) && abs(x) < 2^53 && !(x == 0 && 1 / x < 0)) {
+    return(sprintf("%.0f", x))
+  }
+  sprintf("%.17g", x)
+}
+
+.json_scalar <- function(x, digits = NULL) {
   if (is.character(x)) {
     return(if (is.na(x)) "null" else .json_string(x))
   }
@@ -334,15 +347,16 @@ build <- function(spec) spec_build(spec)
     return(as.character(x))
   }
   if (is.numeric(x)) {
-    return(.py_float_repr(x))
-  }
-  if (is.character(x)) {
-    return(.json_string(x))
+    return(if (is.null(digits)) .py_float_repr(x) else .json_float17(x))
   }
   stop(sprintf("to_json cannot encode a %s", class(x)[1]))
 }
 
-to_json <- function(spec) {
+# digits = NULL (the default) writes floats as Python's repr does, so a spec
+# is byte-identical to json.dumps. digits = 17 writes 17 significant digits,
+# exact under any correctly rounded reader and much faster, for large data
+# such as a skater state.
+to_json <- function(spec, digits = NULL) {
   x <- spec
   if (is.null(x)) {
     return("null")
@@ -350,20 +364,75 @@ to_json <- function(spec) {
   if (is.list(x)) {
     if (!is.null(names(x))) {
       keys <- names(x)
-      body <- vapply(seq_along(x), function(i) paste0(.json_string(keys[i]), ":", to_json(x[[i]])), "")
+      body <- vapply(seq_along(x), function(i) paste0(.json_string(keys[i]), ":", to_json(x[[i]], digits)), "")
       return(paste0("{", paste(body, collapse = ","), "}"))
     }
-    body <- vapply(x, to_json, "")
+    body <- vapply(x, to_json, "", digits = digits)
     return(paste0("[", paste(body, collapse = ","), "]"))
   }
   if (length(x) == 1) {
-    return(.json_scalar(x))
+    return(.json_scalar(x, digits))
   }
-  paste0("[", paste(vapply(seq_along(x), function(i) .json_scalar(x[i]), ""), collapse = ","), "]")
+  paste0("[", paste(vapply(seq_along(x), function(i) .json_scalar(x[i], digits), ""), collapse = ","), "]")
+}
+
+# Correctly rounded decimal-to-double. R's own conversion is exact for at
+# most 15 significant digits and a decimal exponent within 22 (one exact
+# product or quotient); otherwise its answer is moved to the double whose
+# rounding interval holds the decimal.
+.dec_read <- function(txt) {
+  v <- as.numeric(txt)
+  if (is.na(v)) {
+    return(v)
+  }
+  neg <- substr(txt, 1, 1) == "-"
+  t2 <- tolower(sub("^[-+]", "", txt))
+  parts <- strsplit(t2, "e", fixed = TRUE)[[1]]
+  mant <- parts[1]
+  ex <- if (length(parts) > 1) as.integer(parts[2]) else 0L
+  dot <- as.integer(regexpr(".", mant, fixed = TRUE))
+  frac_len <- if (dot > 0) nchar(mant) - dot else 0L
+  digits <- sub("^0+", "", gsub(".", "", mant, fixed = TRUE))
+  if (!nzchar(sub("0+$", "", digits))) {
+    return(v) # zero, with its sign
+  }
+  trail <- nchar(digits) - nchar(sub("0+$", "", digits))
+  sig <- nchar(digits) - trail
+  e10 <- ex - frac_len + trail
+  if (sig <= 15 && abs(e10) <= 22) {
+    # an integer below 2^53 times an exact power of ten: one rounding
+    r <- as.numeric(paste0(substr(digits, 1, sig), "e", e10))
+    return(if (neg) -r else r)
+  }
+  d <- .dec_parse(t2)
+  # A start within a few ulps: R's own conversion can be far off at extreme
+  # exponents, so scale the significand by libm powers of ten in two steps.
+  m <- as.numeric(paste0("0.", digits))
+  e_all <- ex - frac_len + nchar(digits)
+  av <- m * 10^(e_all %/% 2) * 10^(e_all - e_all %/% 2)
+  if (is.infinite(av)) {
+    xm <- .Machine$double.xmax
+    return((if (neg) -1 else 1) * (if (.dec_in_interval(d, .dec_interval(xm))) xm else Inf))
+  }
+  if (av == 0) av <- 2^-1074
+  for (i in 1:200) { # R's answer can be several ulps off at extreme exponents
+    if (.dec_in_interval(d, .dec_interval(av))) break
+    if (.dec_cmp(d, .dec_exact(av)) < 0) {
+      if (av == 2^-1074) {
+        av <- 0 # below half the smallest subnormal
+        break
+      }
+      av <- .pf_nextafter(av, -1)
+    } else {
+      av <- .pf_nextafter(av, 1)
+    }
+  }
+  if (neg) -av else av
 }
 
 # Parse JSON text (Python's json.loads, including NaN and Infinity) into the
-# list form above.
+# list form above. Numbers are correctly rounded, so a double written with
+# 17 significant digits (or as Python's repr) reads back exactly.
 from_json <- function(s) {
   chars <- strsplit(enc2utf8(s), "")[[1]]
   n <- length(chars)
@@ -423,9 +492,9 @@ from_json <- function(s) {
     while (pos <= n && grepl("[-+0-9.eE]", chars[pos])) pos <<- pos + 1L
     txt <- paste(chars[start:(pos - 1L)], collapse = "")
     if (grepl("[.eE]", txt)) {
-      return(as.numeric(txt))
+      return(.dec_read(txt))
     }
-    v <- as.numeric(txt)
+    v <- .dec_read(txt)
     if (abs(v) <= .Machine$integer.max) as.integer(v) else v
   }
   parse_value <- function() {

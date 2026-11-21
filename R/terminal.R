@@ -1,6 +1,12 @@
 # Terminal-leaf ensemble: mix for the mean, model the residual once.
 # Port of skaters/terminal.py.
 
+.PIT_DISPERSION_TARGET <- 1.0 / 12.0 # E[(u - 0.5)^2] for u ~ Uniform(0, 1)
+.PIT_EWMA_DECAY <- 0.98
+.LOSS_FAST_DECAY <- 0.90
+.LOSS_SLOW_DECAY <- 0.995
+.TEMP_AMBIG_EPS <- 0.15 * .PIT_DISPERSION_TARGET # below this, the loss slope decides
+
 terminal_leaf_ensemble <- function(
   skaters,
   leaf_fn = crps_leaf,
@@ -11,8 +17,14 @@ terminal_leaf_ensemble <- function(
   prior_log_weights = NULL,
   max_components = 20L,
   forget = 1.0,
+  adaptive_temperature = FALSE,
+  temp_rho = 0.03,
+  temp_band = 3.0,
   gate_hook = NULL
 ) {
+  force(adaptive_temperature)
+  force(temp_rho)
+  force(temp_band)
   force(k)
   force(learning_rate)
   force(complexity_penalty)
@@ -35,7 +47,14 @@ terminal_leaf_ensemble <- function(
         log_w = prior,
         leaf_state = vector("list", k),
         leaf_pred = vector("list", k),
-        mean_q = lapply(seq_len(k), function(h) numeric(0))
+        mean_q = lapply(seq_len(k), function(h) numeric(0)),
+        # adaptive selection temperature (skaters#213/#215), or NULL
+        adapt = if (adaptive_temperature) {
+          list(log_eta = log(learning_rate), pit_ewma = .PIT_DISPERSION_TARGET,
+               loss_fast = NULL, loss_slow = NULL, pred_q = list())
+        } else {
+          NULL
+        }
       )
     }
 
@@ -44,6 +63,51 @@ terminal_leaf_ensemble <- function(
       r <- skaters[[i]](y, state$sub[[i]])
       state$sub[[i]] <- r$state
       all_dists[[i]] <- r$dists
+    }
+
+    # Adaptive temperature: resolve the issued predictive from one step ago
+    # against y; its PIT dispersion (or, in the dead band, its own logpdf
+    # trend) heats or cools eta for this step's weight update.
+    eta_t <- learning_rate
+    if (adaptive_temperature) {
+      ad <- state$adapt
+      if (length(ad$pred_q) > 0) {
+        prev_pred <- ad$pred_q[[1]]
+        ad$pred_q <- ad$pred_q[-1]
+        lp_c <- dist_logpdf(prev_pred, y)
+        if (!isTRUE(lp_c >= -20.0)) {
+          lp_c <- -20.0
+        } else if (lp_c > 20.0) {
+          lp_c <- 20.0
+        }
+        u <- dist_cdf(prev_pred, y)
+        if (!isTRUE(u >= 0.0 && u <= 1.0)) {
+          u <- 0.5 # degenerate or NaN: no signal
+        }
+        ad$pit_ewma <- .PIT_EWMA_DECAY * ad$pit_ewma + (1.0 - .PIT_EWMA_DECAY) * (u - 0.5)^2
+        if (is.null(ad$loss_fast)) {
+          ad$loss_fast <- lp_c
+          ad$loss_slow <- lp_c
+        } else {
+          ad$loss_fast <- .LOSS_FAST_DECAY * ad$loss_fast + (1.0 - .LOSS_FAST_DECAY) * lp_c
+          ad$loss_slow <- .LOSS_SLOW_DECAY * ad$loss_slow + (1.0 - .LOSS_SLOW_DECAY) * lp_c
+        }
+        e_t <- ad$pit_ewma - .PIT_DISPERSION_TARGET
+        dloss_t <- ad$loss_fast - ad$loss_slow
+        direction <- if (abs(e_t) > .TEMP_AMBIG_EPS) {
+          if (e_t > 0.0) -1.0 else 1.0
+        } else if (dloss_t > 0.0) {
+          1.0
+        } else if (dloss_t < 0.0) {
+          -1.0
+        } else {
+          0.0
+        }
+        ad$log_eta <- ad$log_eta + temp_rho * direction
+        ad$log_eta <- min(max(ad$log_eta, log(learning_rate / temp_band)), log(learning_rate * temp_band))
+      }
+      eta_t <- exp(ad$log_eta)
+      state$adapt <- ad
     }
 
     # Update model weights from the resolved one-step prediction.
@@ -58,7 +122,7 @@ terminal_leaf_ensemble <- function(
         } else if (!isTRUE(lp >= -20.0)) {
           lp <- -20.0
         }
-        state$log_w[i] <- forget * state$log_w[i] + learning_rate * lp - complexity_penalty * depths[i]
+        state$log_w[i] <- forget * state$log_w[i] + eta_t * lp - complexity_penalty * depths[i]
       }
       q[[length(q) + 1L]] <- all_dists[[i]][[1]]
       state$qdist[[i]] <- q
@@ -100,6 +164,9 @@ terminal_leaf_ensemble <- function(
       }
       combined[[h]] <- pred
       state$mean_q[[h]] <- c(mq, mu_h)
+    }
+    if (adaptive_temperature) {
+      state$adapt$pred_q[[length(state$adapt$pred_q) + 1L]] <- combined[[1]]
     }
 
     list(dists = combined, state = state)

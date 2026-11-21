@@ -5,13 +5,16 @@ leaf <- function(k = 1L) {
   force(k)
   function(y, state = NULL) {
     if (is.null(state)) {
-      state <- list(n = 0L, mean = 0.0, m2 = 0.0)
+      state <- list(var = list(n = 0L, mean = 0.0, m2 = 0.0)) # the reference's layout
+    } else if (is.null(state$var)) {
+      state <- list(var = state) # an R checkpoint from before the canonical layout
     }
-    n <- state$n + 1L
-    delta <- y - state$mean
-    mean <- state$mean + delta / n
-    m2 <- state$m2 + delta * (y - mean)
-    state <- list(n = n, mean = mean, m2 = m2)
+    vs <- state$var
+    n <- vs$n + 1L
+    delta <- y - vs$mean
+    mean <- vs$mean + delta / n
+    m2 <- vs$m2 + delta * (y - mean)
+    state <- list(var = list(n = n, mean = mean, m2 = m2))
     v <- if (n < 2L) Inf else m2 / (n - 1)
     std <- if (is.finite(v) && v > 0) sqrt(v) else max(abs(y), 1e-8)
     d <- dist_gaussian(0.0, std)
